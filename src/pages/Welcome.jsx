@@ -5,7 +5,7 @@ import { useWeb3 } from '../context/Web3Context';
 import Button from '../components/ui/Button';
 import { Wallet, Key, Loader2, ArrowRight, Zap, CheckCircle2, AlertCircle } from 'lucide-react';
 import Card from '../components/ui/Card';
-import logo from '../../public/logo.jpeg';
+import logo from '../assets/logo.jpg';
 
 const Welcome = () => {
     const { account, connectWallet, disconnectWallet, contract, loading: walletLoading } = useWeb3();
