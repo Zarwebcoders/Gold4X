@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import React, { useEffect, useState } from 'react';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
     LayoutDashboard,
@@ -19,6 +19,7 @@ import {
     RefreshCw
 } from 'lucide-react';
 import Button from './ui/Button';
+import { useWeb3 } from '../context/Web3Context';
 
 const SidebarItem = ({ icon: Icon, label, to, active, badge }) => (
     <Link
@@ -60,7 +61,23 @@ const SidebarSection = ({ title, items, location }) => (
 
 const Layout = ({ children }) => {
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+    const { connectWallet, disconnectWallet, account, loading } = useWeb3();
     const location = useLocation();
+    const navigate = useNavigate();
+
+    // Protect routes: Redirect to Welcome if not connected
+    // NOTE: In a real app we might verify with backend token too, but for now wallet presence is the gate.
+    useEffect(() => {
+        // If wallet is not connected, we should redirect to Welcome.
+        // However, on refresh 'account' might be null initially until Web3Context restores it.
+        // We rely on Web3Context's "loading" or similar state if it exists, or just weak protection for now.
+        // Given Web3Context tries to restore session on mount, we should wait?
+        // Actually, Web3Context uses window.ethereum.on('accountsChanged') but doesn't auto-connect (unless previously authorized).
+        // Let's assume if no account and not loading -> Redirect.
+        if (!account && !loading) {
+            navigate('/welcome');
+        }
+    }, [account, loading, navigate]);
 
     const navGroups = [
         {
@@ -141,8 +158,15 @@ const Layout = ({ children }) => {
                     ))}
                 </nav>
 
-                <div className="p-3 border-t border-white/5">
-                    <Button variant="ghost" className="w-full justify-center text-red-400 hover:text-red-300 hover:bg-red-400/20">
+                <div className="p-3 border-t border-white/20">
+                    <Button
+                        variant="ghost"
+                        className="w-full justify-center text-red-400 hover:text-red-500"
+                        onClick={() => {
+                            disconnectWallet();
+                            navigate('/welcome');
+                        }}
+                    >
                         <LogOut size={20} />
                         Logout
                     </Button>
@@ -218,7 +242,9 @@ const Layout = ({ children }) => {
                         <button className="p-3 rounded-full bg-white/5 border border-white/5 hover:bg-white/10 hover:animate-spin transition-colors text-highlight flex items-center justify-center">
                             <RefreshCw size={20} />
                         </button>
-                        <Button>Connect Wallet</Button>
+                        <Button onClick={!account ? connectWallet : undefined} disabled={loading} className={account ? "bg-green-600/20 text-green-400 border-green-500/20" : ""}>
+                            {loading ? 'Connecting...' : account ? `${account.slice(0, 6)}...${account.slice(-4)}` : 'Connect Wallet'}
+                        </Button>
                     </div>
                 </header>
 
@@ -229,7 +255,7 @@ const Layout = ({ children }) => {
                     </div>
                 </div>
             </main>
-        </div>
+        </div >
     );
 };
 

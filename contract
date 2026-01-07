@@ -1,0 +1,1092 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.20;
+
+/**
+ * Gold4X De-fi System
+ * ALL Transfers through Admin Wallet Only
+ * Features: G4X Token, Investments, Referral System, ROI, Autopool, Rank System, Withdrawals
+ */
+
+import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/access/AccessControl.sol";
+import "@openzeppelin/contracts/security/Pausable.sol";
+import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
+
+contract Gold4XSystem is ERC20, AccessControl, Pausable, ReentrancyGuard {
+    bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
+    bytes32 public constant KEEPER_ROLE = keccak256("KEEPER_ROLE");
+
+    IERC20 public immutable USDT;
+    IERC20 public immutable USDC;
+    address public adminWallet;
+
+    // Constants
+    uint256 public constant MIN_INVESTMENT = 100 * 1e18; // $100 USDT/USDC or equivalent G4X
+    uint256 public constant BOT_FEE = 50 * 1e18; // $50 USDT/USDC or equivalent G4X
+    uint256 public constant DAILY_ROI_BPS = 60; // 0.6% in basis points
+    uint256 public constant BASIS_POINTS = 10000;
+    uint256 public constant WITHDRAWAL_FEE_BPS = 1000; // 10%
+    uint256 public constant EARNINGS_CAP_MULTIPLIER = 4; // 4x cap
+    uint256 public constant G4X_TO_USD_RATE = 110; // 1 G4X = 1.10 USD (in basis points: 110/100)
+    uint256 public constant USD_TO_G4X_RATE = 100; // 1 USD = 0.909 G4X (inverse)
+    uint256 public constant ROI_CLAIM_INTERVAL = 1 days; // 24 hours between claims
+
+    // Investment token types
+    enum InvestmentToken {
+        USDT,
+        USDC,
+        G4X
+    }
+
+    // User Structure
+    struct User {
+        uint256 totalInvested;
+        uint256 roiEligible;
+        uint256 totalEarned;
+        uint256 totalWithdrawn;
+        uint256 lastROITimestamp;
+        address referrer;
+        uint256 directs;
+        uint256 businessVolume;
+        bool botActivated;
+        bool sosWithdrawn;
+        uint256 autopoolPosition;
+        bytes32 currentRank;
+        uint256 lastRankPayoutTimestamp;
+        uint256 lastRankPayoutMonth;  // Tracks year-month of last payout (YYYYMM format)
+        uint256[] activeBotPositions;
+    }
+
+    // Autopool Structures
+    struct BotPool {
+        uint256 poolSize;
+        uint256 payoutAmount;
+        uint256 rebirthFee;
+        address[] participants;
+        uint256 currentIndex;
+    }
+
+    // Rank Structure
+    struct Rank {
+        uint256 requiredBV;
+        uint256 requiredDirects;
+        bytes32 requiredRankHolder;  // Required rank of downline members
+        uint256 requiredRankHolderCount;  // Number of rank holders required
+        uint256 monthlySalary;  // Gross monthly salary
+        uint256 netSalary;  // Net salary after 10% fee
+    }
+
+    // Level Income Tracking
+    struct LevelIncome {
+        uint256 totalEarned;
+        uint256 lastPayout;
+        uint256 totalPayouts;
+    }
+
+    // Mappings
+    mapping(address => User) public users;
+    mapping(address => uint256) public directIncome;
+    mapping(address => uint256) public sponsorIncome;
+    mapping(address => uint256) public autopoolIncome;
+    mapping(address => uint256) public rankIncome;
+    mapping(address => uint256) public withdrawableBalance;
+    mapping(bytes32 => Rank) public ranks;
+    mapping(uint256 => BotPool) public botPools;
+    mapping(address => uint256) public paidDirects;
+    mapping(address => bool) public autopoolPlaced;
+    mapping(address => mapping(bytes32 => uint256)) public userRankHolderCount;  // Track rank holders in user's network
+
+    // Level Income Tracking (1-20 levels)
+    mapping(address => mapping(uint256 => LevelIncome)) public userLevelIncome;
+
+    // Sponsor percentages for 20 levels (in basis points)
+    uint16[20] public sponsorPercentages = [
+        1400, // 14% - Level 1
+        800,  // 8%  - Level 2
+        400,  // 4%  - Level 3
+        200,  // 2%  - Level 4
+        100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100 // 1% - Levels 5-20
+    ];
+
+    // Transfer Tracking Events
+    event TransferFlow(
+        string transferType,
+        address indexed from,
+        address indexed to,
+        uint256 amount,
+        uint256 timestamp
+    );
+
+    // Existing Events
+    event InvestmentMade(address indexed user, uint256 amount, address indexed referrer);
+    event ROICredited(address indexed user, uint256 amount, uint256 daysClaimed);
+    event DirectIncomeCredited(address indexed user, uint256 amount);
+    event SponsorIncomeCredited(
+        address indexed sponsor,
+        address indexed downline,
+        uint256 amount,
+        uint256 level
+    );
+    event AutopoolPayout(address indexed user, uint256 poolId, uint256 amount);
+    event RankAchieved(address indexed user, bytes32 rank);
+    event RankIncomeCredited(address indexed user, bytes32 rank, uint256 amount);
+    event WithdrawalRequested(address indexed user, uint256 amount, uint256 fee);
+    event SOSWithdrawal(address indexed user, uint256 refundAmount);
+    event G4XTransferred(address indexed from, address indexed to, uint256 amount);
+    event LevelIncomeCredited(address indexed user, uint256 level, uint256 amount);
+    event ROIClaimTooEarly(address indexed user, uint256 timeRemaining);
+
+    constructor(
+        address _usdt,
+        address _usdc,
+        address _adminWallet
+    ) ERC20("Gold4X Token", "G4X") {
+        require(_usdt != address(0), "Invalid USDT address");
+        require(_usdc != address(0), "Invalid USDC address");
+        require(_adminWallet != address(0), "Invalid admin wallet");
+
+        USDT = IERC20(_usdt);
+        USDC = IERC20(_usdc);
+        adminWallet = _adminWallet;
+
+        _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
+        _grantRole(ADMIN_ROLE, msg.sender);
+        _grantRole(KEEPER_ROLE, msg.sender);
+
+        _initializeRanks();
+        _initializeAutopools();
+
+        // Mint initial supply to ADMIN WALLET (not contract)
+        _mint(_adminWallet, 100_000_000 * 10**decimals());
+
+        emit TransferFlow(
+            "G4X Token Minting",
+            address(0),
+            _adminWallet,
+            100_000_000 * 10**decimals(),
+            block.timestamp
+        );
+    }
+
+    function _initializeRanks() private {
+        // STAR: $75,000 BV + 12 directs | Monthly: $500 (Net: $450 after 10% fee)
+        ranks["STAR"] = Rank(
+            75_000 * 1e18,  // requiredBV
+            12,              // requiredDirects
+            bytes32(0),      // requiredRankHolder (none)
+            0,               // requiredRankHolderCount
+            500 * 1e18,      // monthlySalary (gross)
+            450 * 1e18       // netSalary (after 10% fee)
+        );
+        
+        // GOLD: 4 Star rank holders + 15 directs | Monthly: $1,000 (Net: $900 after 10% fee)
+        ranks["GOLD"] = Rank(
+            0,               // requiredBV
+            15,              // requiredDirects
+            "STAR",          // requiredRankHolder
+            4,               // requiredRankHolderCount
+            1000 * 1e18,     // monthlySalary (gross)
+            900 * 1e18       // netSalary (after 10% fee)
+        );
+        
+        // DIAMOND: 4 Gold rank holders + 18 directs | Monthly: $2,000 (Net: $1,800 after 10% fee)
+        ranks["DIAMOND"] = Rank(
+            0,               // requiredBV
+            18,              // requiredDirects
+            "GOLD",          // requiredRankHolder
+            4,               // requiredRankHolderCount
+            2000 * 1e18,     // monthlySalary (gross)
+            1800 * 1e18      // netSalary (after 10% fee)
+        );
+        
+        // RUBY: 5 Diamond rank holders + 20 directs | Monthly: $4,000 (Net: $3,600 after 10% fee)
+        ranks["RUBY"] = Rank(
+            0,               // requiredBV
+            20,              // requiredDirects
+            "DIAMOND",       // requiredRankHolder
+            5,               // requiredRankHolderCount
+            4000 * 1e18,     // monthlySalary (gross)
+            3600 * 1e18      // netSalary (after 10% fee)
+        );
+    }
+
+    function _initializeAutopools() private {
+        // Regular Bots - Progressive Payouts
+        botPools[1] = BotPool(120, 1320 * 1e18, 100 * 1e18, new address[](0), 0);
+        botPools[2] = BotPool(120, 2640 * 1e18, 200 * 1e18, new address[](0), 0);
+        botPools[3] = BotPool(120, 5280 * 1e18, 400 * 1e18, new address[](0), 0);
+        botPools[4] = BotPool(120, 10560 * 1e18, 800 * 1e18, new address[](0), 0);
+
+        // Super Bots - Progressive Payouts
+        botPools[5] = BotPool(12, 3000 * 1e18, 525 * 1e18, new address[](0), 0);
+        botPools[6] = BotPool(12, 6000 * 1e18, 1050 * 1e18, new address[](0), 0);
+        botPools[7] = BotPool(12, 9000 * 1e18, 1575 * 1e18, new address[](0), 0);
+    }
+
+    // Main Investment Function - Supports USDT, USDC, or G4X
+    function invest(
+        uint256 amount,
+        address referrer,
+        InvestmentToken tokenType
+    ) external whenNotPaused nonReentrant {
+        require(amount > 0, "Amount must be greater than 0");
+
+        uint256 usdValue; // Value in USD (18 decimals)
+
+        // Handle different investment token types
+        if (tokenType == InvestmentToken.USDT) {
+            require(amount >= MIN_INVESTMENT, "Minimum investment $100 USDT required");
+            require(USDT.transferFrom(msg.sender, adminWallet, amount), "USDT transfer failed");
+            usdValue = amount;
+            emit TransferFlow("User Investment (USDT)", msg.sender, adminWallet, amount, block.timestamp);
+        } else if (tokenType == InvestmentToken.USDC) {
+            require(amount >= MIN_INVESTMENT, "Minimum investment $100 USDC required");
+            require(USDC.transferFrom(msg.sender, adminWallet, amount), "USDC transfer failed");
+            usdValue = amount;
+            emit TransferFlow("User Investment (USDC)", msg.sender, adminWallet, amount, block.timestamp);
+        } else if (tokenType == InvestmentToken.G4X) {
+            // Convert G4X to USD value: 1 G4X = 1.10 USD
+            usdValue = (amount * G4X_TO_USD_RATE) / 100;
+            require(usdValue >= MIN_INVESTMENT, "Minimum investment equivalent to $100 required");
+
+            // Transfer G4X tokens from user to admin wallet (not burned)
+            _transfer(msg.sender, adminWallet, amount);
+            emit TransferFlow("User Investment (G4X)", msg.sender, adminWallet, amount, block.timestamp);
+        }
+
+        User storage user = users[msg.sender];
+
+        // Handle first investment
+        if (user.totalInvested == 0) {
+            // Register referral
+            if (
+                referrer != address(0) &&
+                referrer != msg.sender &&
+                users[referrer].totalInvested > 0
+            ) {
+                user.referrer = referrer;
+                users[referrer].directs++;
+                emit DirectIncomeCredited(referrer, 0);
+
+                _processAutomaticDirectIncome(referrer);
+            }
+
+            // Charge bot fee for first investment
+            uint256 botFeeInUSD = BOT_FEE;
+            if (usdValue >= MIN_INVESTMENT) {
+                uint256 roiEligible = usdValue - botFeeInUSD;
+                user.roiEligible += roiEligible;
+                user.botActivated = true;
+
+                emit TransferFlow("Bot Fees", msg.sender, adminWallet, botFeeInUSD, block.timestamp);
+
+                if (users[referrer].directs >= 3 && !autopoolPlaced[referrer]) {
+                    _placeInAutopool(referrer);
+                    autopoolPlaced[referrer] = true;
+                }
+            } else {
+                user.roiEligible += usdValue;
+            }
+        } else {
+            user.roiEligible += usdValue;
+        }
+
+        user.totalInvested += usdValue;
+        user.lastROITimestamp = block.timestamp;
+        _updateBusinessVolume(msg.sender, usdValue);
+
+        // G4X token rewards from ADMIN WALLET
+        // Conversion: 1.10 USDT/USDC = 1 G4X (inverse of investment rate)
+        // Only give G4X rewards if they invested with USDT or USDC
+        if (tokenType != InvestmentToken.G4X) {
+            // Calculate G4X: usdValue / 1.10 = G4X amount
+            // Formula: (usdValue * 100) / 110
+            uint256 g4xReward = (usdValue * 100) / 110;
+            require(balanceOf(adminWallet) >= g4xReward, "Insufficient G4X in admin wallet");
+            _transfer(adminWallet, msg.sender, g4xReward);
+            emit TransferFlow("G4X Reward Tokens", adminWallet, msg.sender, g4xReward, block.timestamp);
+        }
+
+        emit InvestmentMade(msg.sender, usdValue, user.referrer);
+    }
+
+    // Automatic direct income processing - From ADMIN WALLET
+    function _processAutomaticDirectIncome(address user) private {
+        uint256 userDirects = users[user].directs;
+
+        if (userDirects >= 3 && paidDirects[user] < 3) {
+            uint256 directRewards = 40 * 1e18;
+
+            directIncome[user] += directRewards;
+            users[user].totalEarned += directRewards;
+            paidDirects[user] = userDirects;
+
+            // Transfer G4X directly to user wallet
+            require(balanceOf(adminWallet) >= directRewards, "Insufficient G4X in admin wallet");
+            _transfer(adminWallet, user, directRewards);
+
+            emit TransferFlow("Direct Income", adminWallet, user, directRewards, block.timestamp);
+            emit DirectIncomeCredited(user, directRewards);
+        }
+    }
+
+    function _updateBusinessVolume(address user, uint256 amount) private {
+        address upline = users[user].referrer;
+        for (uint256 i = 0; i < 100 && upline != address(0); i++) {
+            users[upline].businessVolume += amount;
+            upline = users[upline].referrer;
+        }
+    }
+
+    // ========================================
+    // NEW: User-Callable ROI Processing with 24-Hour Check
+    // ========================================
+    
+    /**
+     * @notice Process ROI for a specific user - Can be called by ANYONE
+     * @dev Only processes if 24 hours have passed since last claim
+     * @param user Address of the user to process ROI for
+     */
+    function processROI(address user) external whenNotPaused nonReentrant {
+        User storage userData = users[user];
+        require(userData.roiEligible > 0, "No ROI eligible amount");
+        require(userData.lastROITimestamp > 0, "No investment found");
+
+        // Check if 24 hours have passed
+        uint256 timePassed = block.timestamp - userData.lastROITimestamp;
+        require(timePassed >= ROI_CLAIM_INTERVAL, "ROI can only be claimed once every 24 hours");
+
+        uint256 daysPassed = timePassed / 1 days;
+        require(daysPassed > 0, "No full days passed yet");
+
+        uint256 roiAmount = (userData.roiEligible * DAILY_ROI_BPS * daysPassed) / BASIS_POINTS;
+
+        uint256 maxEarnings = userData.totalInvested * EARNINGS_CAP_MULTIPLIER;
+        if (userData.totalEarned + roiAmount > maxEarnings) {
+            roiAmount = maxEarnings - userData.totalEarned;
+        }
+
+        require(roiAmount > 0, "No ROI to claim");
+
+        userData.totalEarned += roiAmount;
+        userData.lastROITimestamp = block.timestamp;
+
+        // Transfer G4X directly to user wallet
+        require(balanceOf(adminWallet) >= roiAmount, "Insufficient G4X in admin wallet");
+        _transfer(adminWallet, user, roiAmount);
+
+        emit TransferFlow("ROI Income", adminWallet, user, roiAmount, block.timestamp);
+        _distributeSponsorEarnings(user, roiAmount);
+        emit ROICredited(user, roiAmount, daysPassed);
+    }
+
+    /**
+     * @notice Claim your own ROI - Convenience function
+     * @dev Calls processROI for msg.sender
+     */
+    function claimMyROI() external whenNotPaused nonReentrant {
+        User storage userData = users[msg.sender];
+        require(userData.roiEligible > 0, "No ROI eligible amount");
+        require(userData.lastROITimestamp > 0, "No investment found");
+
+        uint256 timePassed = block.timestamp - userData.lastROITimestamp;
+        require(timePassed >= ROI_CLAIM_INTERVAL, "ROI can only be claimed once every 24 hours");
+
+        uint256 daysPassed = timePassed / 1 days;
+        require(daysPassed > 0, "No full days passed yet");
+
+        uint256 roiAmount = (userData.roiEligible * DAILY_ROI_BPS * daysPassed) / BASIS_POINTS;
+
+        uint256 maxEarnings = userData.totalInvested * EARNINGS_CAP_MULTIPLIER;
+        if (userData.totalEarned + roiAmount > maxEarnings) {
+            roiAmount = maxEarnings - userData.totalEarned;
+        }
+
+        require(roiAmount > 0, "No ROI to claim");
+
+        userData.totalEarned += roiAmount;
+        userData.lastROITimestamp = block.timestamp;
+
+        // Transfer G4X directly to user wallet
+        require(balanceOf(adminWallet) >= roiAmount, "Insufficient G4X in admin wallet");
+        _transfer(adminWallet, msg.sender, roiAmount);
+
+        emit TransferFlow("ROI Income", adminWallet, msg.sender, roiAmount, block.timestamp);
+        _distributeSponsorEarnings(msg.sender, roiAmount);
+        emit ROICredited(msg.sender, roiAmount, daysPassed);
+    }
+
+    /**
+     * @notice Batch process ROI for multiple users - Gas efficient
+     * @dev Anyone can call this to process ROI for multiple users at once
+     * @param userAddresses Array of user addresses to process
+     */
+    function batchProcessROI(address[] calldata userAddresses) external whenNotPaused {
+        for (uint256 i = 0; i < userAddresses.length; i++) {
+            address user = userAddresses[i];
+            User storage userData = users[user];
+            
+            // Skip if user has no investment or ROI eligible amount
+            if (userData.roiEligible == 0 || userData.lastROITimestamp == 0) {
+                continue;
+            }
+
+            uint256 timePassed = block.timestamp - userData.lastROITimestamp;
+            
+            // Skip if 24 hours haven't passed
+            if (timePassed < ROI_CLAIM_INTERVAL) {
+                continue;
+            }
+
+            uint256 daysPassed = timePassed / 1 days;
+            if (daysPassed == 0) {
+                continue;
+            }
+
+            uint256 roiAmount = (userData.roiEligible * DAILY_ROI_BPS * daysPassed) / BASIS_POINTS;
+
+            uint256 maxEarnings = userData.totalInvested * EARNINGS_CAP_MULTIPLIER;
+            if (userData.totalEarned + roiAmount > maxEarnings) {
+                roiAmount = maxEarnings - userData.totalEarned;
+            }
+
+            if (roiAmount > 0) {
+                userData.totalEarned += roiAmount;
+                userData.lastROITimestamp = block.timestamp;
+
+                // Transfer G4X directly to user wallet
+                require(balanceOf(adminWallet) >= roiAmount, "Insufficient G4X in admin wallet");
+                _transfer(adminWallet, user, roiAmount);
+
+                emit TransferFlow("ROI Income", adminWallet, user, roiAmount, block.timestamp);
+                _distributeSponsorEarnings(user, roiAmount);
+                emit ROICredited(user, roiAmount, daysPassed);
+            }
+        }
+    }
+
+    /**
+     * @notice Check if a user can claim ROI
+     * @param user Address to check
+     * @return canClaim Whether ROI can be claimed
+     * @return timeUntilNext Seconds until next claim (0 if can claim now)
+     * @return pendingAmount Estimated ROI amount available
+     */
+    function canClaimROI(address user) external view returns (
+        bool canClaim,
+        uint256 timeUntilNext,
+        uint256 pendingAmount
+    ) {
+        User storage userData = users[user];
+        
+        if (userData.roiEligible == 0 || userData.lastROITimestamp == 0) {
+            return (false, 0, 0);
+        }
+
+        uint256 timePassed = block.timestamp - userData.lastROITimestamp;
+        
+        if (timePassed < ROI_CLAIM_INTERVAL) {
+            return (false, ROI_CLAIM_INTERVAL - timePassed, 0);
+        }
+
+        uint256 daysPassed = timePassed / 1 days;
+        uint256 roiAmount = (userData.roiEligible * DAILY_ROI_BPS * daysPassed) / BASIS_POINTS;
+
+        uint256 maxEarnings = userData.totalInvested * EARNINGS_CAP_MULTIPLIER;
+        if (userData.totalEarned + roiAmount > maxEarnings) {
+            roiAmount = maxEarnings - userData.totalEarned;
+        }
+
+        return (roiAmount > 0, 0, roiAmount);
+    }
+
+    function _distributeSponsorEarnings(address downline, uint256 roiAmount) private {
+        address upline = users[downline].referrer;
+
+        for (uint256 i = 0; i < sponsorPercentages.length && upline != address(0); i++) {
+            uint256 sponsorShare = (roiAmount * sponsorPercentages[i]) / BASIS_POINTS;
+
+            if (sponsorShare > 0) {
+                sponsorIncome[upline] += sponsorShare;
+
+                // Track level income
+                userLevelIncome[upline][i + 1].totalEarned += sponsorShare;
+                userLevelIncome[upline][i + 1].lastPayout = sponsorShare;
+                userLevelIncome[upline][i + 1].totalPayouts++;
+
+                // Transfer G4X directly to upline wallet
+                require(balanceOf(adminWallet) >= sponsorShare, "Insufficient G4X in admin wallet");
+                _transfer(adminWallet, upline, sponsorShare);
+
+                emit TransferFlow("Sponsor Income", adminWallet, upline, sponsorShare, block.timestamp);
+                emit SponsorIncomeCredited(upline, downline, sponsorShare, i + 1);
+                emit LevelIncomeCredited(upline, i + 1, sponsorShare);
+            }
+
+            upline = users[upline].referrer;
+        }
+    }
+
+    // Direct Income Processing - From ADMIN WALLET
+    function processDirectIncome(address user) external whenNotPaused onlyRole(KEEPER_ROLE) {
+        uint256 userDirects = users[user].directs;
+
+        if (userDirects >= 3 && userDirects > paidDirects[user]) {
+            uint256 unpaidDirects = userDirects - paidDirects[user];
+            uint256 directRewards = unpaidDirects * 40 * 1e18;
+
+            directIncome[user] += directRewards;
+            users[user].totalEarned += directRewards;
+            paidDirects[user] = userDirects;
+
+            // Transfer G4X directly to user wallet
+            require(balanceOf(adminWallet) >= directRewards, "Insufficient G4X in admin wallet");
+            _transfer(adminWallet, user, directRewards);
+
+            emit TransferFlow("Direct Income", adminWallet, user, directRewards, block.timestamp);
+            emit DirectIncomeCredited(user, directRewards);
+        }
+    }
+
+    // Autopool Functions - Automatic placement and payout
+    function _placeInAutopool(address user) private {
+        for (uint256 i = 1; i <= 7; i++) {
+            if (botPools[i].participants.length < botPools[i].poolSize) {
+                botPools[i].participants.push(user);
+                users[user].autopoolPosition = i;
+                
+                // Check if pool is now full and trigger automatic payout
+                if (botPools[i].participants.length == botPools[i].poolSize) {
+                    _processAutopoolPayoutInternal(i);
+                }
+                break;
+            }
+        }
+    }
+
+    // Autopool Payout - Automatic when pool fills, or manual trigger
+    // Can be called by ANYONE to process pending full pools
+    function processAutopoolPayout(uint256 poolId) external whenNotPaused nonReentrant {
+        BotPool storage pool = botPools[poolId];
+        require(pool.participants.length == pool.poolSize, "Pool not full");
+        _processAutopoolPayoutInternal(poolId);
+    }
+    
+    // Internal function to process autopool payout
+    function _processAutopoolPayoutInternal(uint256 poolId) private {
+        BotPool storage pool = botPools[poolId];
+        require(pool.participants.length == pool.poolSize, "Pool not full");
+
+        uint256 perUserPayout = pool.payoutAmount / pool.poolSize;
+
+        for (uint256 i = 0; i < pool.participants.length; i++) {
+            address participant = pool.participants[i];
+            uint256 payoutToTransfer = perUserPayout;
+
+            // Check if user has enough G4X balance for rebirth fee
+            if (balanceOf(participant) >= pool.rebirthFee) {
+                // Deduct rebirth fee from user's G4X balance
+                _transfer(participant, adminWallet, pool.rebirthFee);
+                _activateNextBots(poolId, participant);
+                payoutToTransfer = perUserPayout; // Full payout since rebirth fee already deducted
+            }
+
+            autopoolIncome[participant] += perUserPayout;
+            users[participant].totalEarned += perUserPayout;
+
+            // Transfer G4X directly to participant wallet
+            require(balanceOf(adminWallet) >= payoutToTransfer, "Insufficient G4X in admin wallet");
+            _transfer(adminWallet, participant, payoutToTransfer);
+
+            emit TransferFlow("Autopool Income", adminWallet, participant, perUserPayout, block.timestamp);
+            emit AutopoolPayout(participant, poolId, perUserPayout);
+        }
+
+        delete pool.participants;
+        pool.currentIndex = 0;
+    }
+
+    function _placeInSpecificBot(address user, uint256 poolId) private {
+        BotPool storage pool = botPools[poolId];
+        if (pool.participants.length < pool.poolSize) {
+            pool.participants.push(user);
+            users[user].autopoolPosition = poolId;
+            
+            // Check if pool is now full and trigger automatic payout
+            if (pool.participants.length == pool.poolSize) {
+                _processAutopoolPayoutInternal(poolId);
+            }
+        }
+    }
+
+    function _activateNextBots(uint256 completedPoolId, address user) private {
+        if (completedPoolId == 1) {
+            _placeInSpecificBot(user, 2);
+            _placeInSpecificBot(user, 5);
+        } else if (completedPoolId == 2) {
+            _placeInSpecificBot(user, 3);
+            _placeInSpecificBot(user, 6);
+        } else if (completedPoolId == 3) {
+            _placeInSpecificBot(user, 4);
+            _placeInSpecificBot(user, 7);
+        }
+    }
+
+    // Rank System - Fixed Monthly Schedule from ADMIN WALLET
+    // Can be called by ANYONE (user can claim their own rank rewards)
+    // Users can claim once per 30-day period
+    function processRankRewards(address user) public whenNotPaused {
+        User storage userData = users[user];
+        bytes32 currentRank = userData.currentRank;
+        bytes32 qualifiedRank = _calculateRank(user);
+        
+        // Update rank if user qualified for a new rank
+        if (qualifiedRank != currentRank && qualifiedRank != bytes32(0)) {
+            // Update upline rank holder counts
+            _updateUplineRankHolderCounts(user, currentRank, qualifiedRank);
+            userData.currentRank = qualifiedRank;
+            userData.lastRankPayoutTimestamp = block.timestamp;
+            
+            // Set initial period (no payment on first achievement)
+            userData.lastRankPayoutMonth = _getCurrentPeriod();
+            
+            emit RankAchieved(user, qualifiedRank);
+        }
+        
+        // Process monthly salary if user has a rank
+        if (userData.currentRank != bytes32(0)) {
+            uint256 currentPeriod = _getCurrentPeriod();
+            uint256 lastPayoutPeriod = userData.lastRankPayoutMonth;
+            
+            // Check if user already claimed this period
+            require(currentPeriod > lastPayoutPeriod, "Already claimed for this period");
+            
+            // Verify user still qualifies for their current rank
+            bytes32 stillQualified = _calculateRank(user);
+            require(stillQualified == userData.currentRank, "User no longer qualifies for current rank");
+            
+            uint256 netSalary = ranks[userData.currentRank].netSalary;
+            
+            rankIncome[user] += netSalary;
+            users[user].totalEarned += netSalary;
+            userData.lastRankPayoutTimestamp = block.timestamp;
+            userData.lastRankPayoutMonth = currentPeriod;
+            
+            // Transfer G4X directly to user wallet (net amount after 10% fee)
+            require(balanceOf(adminWallet) >= netSalary, "Insufficient G4X in admin wallet");
+            _transfer(adminWallet, user, netSalary);
+            
+            emit TransferFlow("Rank Income", adminWallet, user, netSalary, block.timestamp);
+            emit RankIncomeCredited(user, userData.currentRank, netSalary);
+        }
+    }
+    
+    // Convenience function for users to claim their own rank rewards
+    function claimMyRankReward() external whenNotPaused nonReentrant {
+        processRankRewards(msg.sender);
+    }
+    
+    // Simple period calculation: timestamp / 30 days
+    // Returns period number (e.g., period 1, period 2, etc.)
+    function _getCurrentPeriod() private view returns (uint256) {
+        return block.timestamp / 30 days;
+    }
+    
+    // Update upline rank holder counts when user's rank changes
+    function _updateUplineRankHolderCounts(address user, bytes32 oldRank, bytes32 newRank) private {
+        address upline = users[user].referrer;
+        
+        // Update up to 100 levels
+        for (uint256 i = 0; i < 100 && upline != address(0); i++) {
+            // Decrease old rank count
+            if (oldRank != bytes32(0)) {
+                if (userRankHolderCount[upline][oldRank] > 0) {
+                    userRankHolderCount[upline][oldRank]--;
+                }
+            }
+            
+            // Increase new rank count
+            if (newRank != bytes32(0)) {
+                userRankHolderCount[upline][newRank]++;
+            }
+            
+            upline = users[upline].referrer;
+        }
+    }
+
+    function _calculateRank(address user) private view returns (bytes32) {
+        User storage userData = users[user];
+        uint256 bv = userData.businessVolume;
+        uint256 directs = userData.directs;
+        
+        // Check RUBY: 5 Diamond holders + 20 directs
+        if (directs >= ranks["RUBY"].requiredDirects && 
+            _countDirectRankHolders(user, "DIAMOND") >= 5) {
+            return "RUBY";
+        }
+        
+        // Check DIAMOND: 4 Gold holders + 18 directs
+        if (directs >= ranks["DIAMOND"].requiredDirects && 
+            _countDirectRankHolders(user, "GOLD") >= 4) {
+            return "DIAMOND";
+        }
+        
+        // Check GOLD: 4 Star holders + 15 directs
+        if (directs >= ranks["GOLD"].requiredDirects && 
+            _countDirectRankHolders(user, "STAR") >= 4) {
+            return "GOLD";
+        }
+        
+        // Check STAR: $75,000 BV ($25,000 per leg minimum) + 12 directs
+        if (directs >= ranks["STAR"].requiredDirects && 
+            bv >= ranks["STAR"].requiredBV &&
+            _hasValidLegDistribution(user, 25_000 * 1e18)) {
+            return "STAR";
+        }
+        
+        return bytes32(0);
+    }
+    
+    // Count rank holders in DIRECT downline only
+    function _countDirectRankHolders(address user, bytes32 requiredRank) private view returns (uint256) {
+        return userRankHolderCount[user][requiredRank];
+    }
+    
+    // Check if user has at least 3 legs with minimum BV each
+    // For STAR rank: need $25,000 per leg (3 legs minimum)
+    function _hasValidLegDistribution(address user, uint256 minBVPerLeg) private view returns (bool) {
+        // This is a simplified check - you may want to implement more sophisticated leg tracking
+        // For now, we check if total BV is at least 3x the minimum per leg
+        // In production, you should track actual leg BVs separately
+        uint256 totalBV = users[user].businessVolume;
+        return totalBV >= (minBVPerLeg * 3);
+    }
+    
+    // Helper function to check if user can claim monthly rank salary
+    function canClaimRankSalary(address user) external view returns (
+        bool canClaim,
+        uint256 timeUntilNext,
+        uint256 salaryAmount,
+        bytes32 currentRank
+    ) {
+        User storage userData = users[user];
+        
+        if (userData.currentRank == bytes32(0)) {
+            return (false, 0, 0, bytes32(0));
+        }
+        
+        uint256 currentPeriod = _getCurrentPeriod();
+        uint256 lastPayoutPeriod = userData.lastRankPayoutMonth;
+        
+        // Check if already claimed this period
+        if (currentPeriod <= lastPayoutPeriod) {
+            // Calculate time until next period
+            uint256 timeSinceLastPayout = block.timestamp - userData.lastRankPayoutTimestamp;
+            uint256 timeRemaining = 30 days > timeSinceLastPayout ? 30 days - timeSinceLastPayout : 0;
+            return (false, timeRemaining, 0, userData.currentRank);
+        }
+        
+        // Check if still qualifies
+        bytes32 stillQualified = _calculateRank(user);
+        if (stillQualified != userData.currentRank) {
+            return (false, 0, 0, userData.currentRank);
+        }
+        
+        uint256 netSalary = ranks[userData.currentRank].netSalary;
+        return (true, 0, netSalary, userData.currentRank);
+    }
+
+    // Withdrawal Functions - From ADMIN WALLET (Choose USDT or USDC)
+    function requestWithdrawal(uint256 amount, InvestmentToken tokenType)
+        external
+        whenNotPaused
+        nonReentrant
+    {
+        require(amount > 0, "Amount must be greater than 0");
+        require(
+            tokenType == InvestmentToken.USDT || tokenType == InvestmentToken.USDC,
+            "Invalid withdrawal token"
+        );
+        require(withdrawableBalance[msg.sender] >= amount, "Insufficient withdrawable balance");
+
+        User storage user = users[msg.sender];
+        require(
+            user.totalEarned + amount <= user.totalInvested * EARNINGS_CAP_MULTIPLIER,
+            "Exceeds 4x earnings cap"
+        );
+
+        uint256 fee = (amount * WITHDRAWAL_FEE_BPS) / BASIS_POINTS;
+        uint256 netAmount = amount - fee;
+
+        withdrawableBalance[msg.sender] -= amount;
+        user.totalWithdrawn += netAmount;
+
+        // Withdrawal from ADMIN WALLET in chosen token
+        if (tokenType == InvestmentToken.USDT) {
+            require(
+                USDT.transferFrom(adminWallet, msg.sender, netAmount),
+                "USDT withdrawal transfer failed"
+            );
+            emit TransferFlow("User Withdrawals (USDT)", adminWallet, msg.sender, netAmount, block.timestamp);
+        } else {
+            require(
+                USDC.transferFrom(adminWallet, msg.sender, netAmount),
+                "USDC withdrawal transfer failed"
+            );
+            emit TransferFlow("User Withdrawals (USDC)", adminWallet, msg.sender, netAmount, block.timestamp);
+        }
+
+        emit TransferFlow("Withdrawal Fees", adminWallet, adminWallet, fee, block.timestamp);
+        emit WithdrawalRequested(msg.sender, amount, fee);
+    }
+
+    // SOS Withdrawal - From ADMIN WALLET (Choose USDT or USDC)
+    function processSOSWithdrawal(InvestmentToken tokenType) external whenNotPaused nonReentrant {
+        require(
+            tokenType == InvestmentToken.USDT || tokenType == InvestmentToken.USDC,
+            "Invalid withdrawal token"
+        );
+
+        User storage user = users[msg.sender];
+        require(!user.sosWithdrawn, "SOS already processed");
+        require(user.totalInvested > 0, "No investment found");
+
+        uint256 refundableAmount = user.totalInvested - user.totalEarned;
+        if (user.botActivated) {
+            refundableAmount -= BOT_FEE;
+        }
+
+        require(refundableAmount > 0, "No refundable amount");
+
+        uint256 fee = (refundableAmount * WITHDRAWAL_FEE_BPS) / BASIS_POINTS;
+        uint256 netRefund = refundableAmount - fee;
+
+        user.sosWithdrawn = true;
+        user.roiEligible = 0;
+
+        // SOS refund in chosen token
+        if (tokenType == InvestmentToken.USDT) {
+            require(USDT.transferFrom(adminWallet, msg.sender, netRefund), "USDT SOS transfer failed");
+            emit TransferFlow("SOS Withdrawal (USDT)", adminWallet, msg.sender, netRefund, block.timestamp);
+        } else {
+            require(USDC.transferFrom(adminWallet, msg.sender, netRefund), "USDC SOS transfer failed");
+            emit TransferFlow("SOS Withdrawal (USDC)", adminWallet, msg.sender, netRefund, block.timestamp);
+        }
+
+        emit SOSWithdrawal(msg.sender, netRefund);
+    }
+
+    // G4X Token Operations - From ADMIN WALLET
+    function transferG4XFromAdmin(address to, uint256 amount) external onlyRole(ADMIN_ROLE) {
+        require(to != address(0), "Invalid recipient address");
+        require(amount > 0, "Amount must be greater than 0");
+        require(balanceOf(adminWallet) >= amount, "Insufficient G4X in admin wallet");
+
+        _transfer(adminWallet, to, amount);
+
+        emit TransferFlow("Admin G4X Transfer", adminWallet, to, amount, block.timestamp);
+        emit G4XTransferred(adminWallet, to, amount);
+    }
+
+    // Sell G4X - USDT/USDC from ADMIN WALLET
+    // Conversion: 1 G4X = 1.10 USDT/USDC
+    function sellG4X(uint256 g4xAmount, InvestmentToken tokenType)
+        external
+        whenNotPaused
+        nonReentrant
+    {
+        require(g4xAmount > 0, "Amount must be greater than 0");
+        require(
+            tokenType == InvestmentToken.USDT || tokenType == InvestmentToken.USDC,
+            "Invalid token type"
+        );
+        require(balanceOf(msg.sender) >= g4xAmount, "Insufficient G4X balance");
+
+        // Calculate USD value: g4xAmount * 1.10
+        // Formula: (g4xAmount * 110) / 100
+        uint256 usdAmount = (g4xAmount * G4X_TO_USD_RATE) / 100;
+
+        // Transfer G4X from user to ADMIN WALLET
+        _transfer(msg.sender, adminWallet, g4xAmount);
+
+        // Transfer USDT or USDC from ADMIN WALLET to user
+        if (tokenType == InvestmentToken.USDT) {
+            require(USDT.balanceOf(adminWallet) >= usdAmount, "Insufficient USDT in admin wallet");
+            require(USDT.transferFrom(adminWallet, msg.sender, usdAmount), "USDT transfer failed");
+            emit TransferFlow("G4X Token Sales (USDT)", msg.sender, adminWallet, g4xAmount, block.timestamp);
+            emit TransferFlow("USDT Transfer", adminWallet, msg.sender, usdAmount, block.timestamp);
+        } else {
+            require(USDC.balanceOf(adminWallet) >= usdAmount, "Insufficient USDC in admin wallet");
+            require(USDC.transferFrom(adminWallet, msg.sender, usdAmount), "USDC transfer failed");
+            emit TransferFlow("G4X Token Sales (USDC)", msg.sender, adminWallet, g4xAmount, block.timestamp);
+            emit TransferFlow("USDC Transfer", adminWallet, msg.sender, usdAmount, block.timestamp);
+        }
+    }
+
+    // Admin Functions
+    // Note: G4X rate is now fixed at 1 G4X = 1.10 USD (constant)
+
+    function setAdminWallet(address newAdminWallet) external onlyRole(ADMIN_ROLE) {
+        require(newAdminWallet != address(0), "Invalid admin wallet");
+        adminWallet = newAdminWallet;
+    }
+
+    function pause() external onlyRole(ADMIN_ROLE) {
+        _pause();
+    }
+
+    function unpause() external onlyRole(ADMIN_ROLE) {
+        _unpause();
+    }
+
+    // View Functions - User Level Income
+    function getUserLevelIncome(address user, uint256 level)
+        external
+        view
+        returns (uint256 totalEarned, uint256 lastPayout, uint256 totalPayouts)
+    {
+        LevelIncome storage income = userLevelIncome[user][level];
+        return (income.totalEarned, income.lastPayout, income.totalPayouts);
+    }
+
+    // Get level income in chunks to avoid stack too deep
+    // chunk 0 = levels 1-5, chunk 1 = levels 6-10, chunk 2 = levels 11-15, chunk 3 = levels 16-20
+    function getUserLevelIncomeChunk(address user, uint256 chunk)
+        external
+        view
+        returns (
+            uint256[5] memory totalEarned,
+            uint256[5] memory lastPayout,
+            uint256[5] memory totalPayouts
+        )
+    {
+        require(chunk < 4, "Invalid chunk (0-3)");
+        uint256 startLevel = (chunk * 5) + 1;
+        
+        for (uint256 i = 0; i < 5; i++) {
+            uint256 level = startLevel + i;
+            LevelIncome storage income = userLevelIncome[user][level];
+            totalEarned[i] = income.totalEarned;
+            lastPayout[i] = income.lastPayout;
+            totalPayouts[i] = income.totalPayouts;
+        }
+    }
+
+    // Existing View Functions - Split into smaller functions to avoid stack too deep
+    
+    // Get basic investment information
+    function getUserBasicInfo(address user)
+        external
+        view
+        returns (
+            uint256 totalInvested,
+            uint256 roiEligible,
+            uint256 totalEarned,
+            uint256 totalWithdrawn,
+            bool botActivated,
+            bool sosWithdrawn
+        )
+    {
+        User storage userData = users[user];
+        return (
+            userData.totalInvested,
+            userData.roiEligible,
+            userData.totalEarned,
+            userData.totalWithdrawn,
+            userData.botActivated,
+            userData.sosWithdrawn
+        );
+    }
+    
+    // Get referral and network information
+    function getUserReferralInfo(address user)
+        external
+        view
+        returns (
+            address referrer,
+            uint256 directs,
+            uint256 businessVolume,
+            uint256 autopoolPosition
+        )
+    {
+        User storage userData = users[user];
+        return (
+            userData.referrer,
+            userData.directs,
+            userData.businessVolume,
+            userData.autopoolPosition
+        );
+    }
+    
+    // Get rank and timing information
+    function getUserRankInfo(address user)
+        external
+        view
+        returns (
+            bytes32 currentRank,
+            uint256 lastROITimestamp,
+            uint256 lastRankPayoutTimestamp,
+            uint256 lastRankPayoutMonth
+        )
+    {
+        User storage userData = users[user];
+        return (
+            userData.currentRank,
+            userData.lastROITimestamp,
+            userData.lastRankPayoutTimestamp,
+            userData.lastRankPayoutMonth
+        );
+    }
+
+    function getUserEarnings(address user)
+        external
+        view
+        returns (
+            uint256 direct,
+            uint256 sponsor,
+            uint256 autopool,
+            uint256 rank,
+            uint256 withdrawable
+        )
+    {
+        return (
+            directIncome[user],
+            sponsorIncome[user],
+            autopoolIncome[user],
+            rankIncome[user],
+            withdrawableBalance[user]
+        );
+    }
+
+    function getAutopoolInfo(uint256 poolId)
+        external
+        view
+        returns (
+            uint256 poolSize,
+            uint256 currentParticipants,
+            uint256 payoutAmount,
+            address[] memory participants
+        )
+    {
+        BotPool memory pool = botPools[poolId];
+        return (pool.poolSize, pool.participants.length, pool.payoutAmount, pool.participants);
+    }
+
+    // Role management functions
+    function grantAdminRole(address account) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        _grantRole(ADMIN_ROLE, account);
+    }
+
+    function grantKeeperRole(address account) external onlyRole(ADMIN_ROLE) {
+        _grantRole(KEEPER_ROLE, account);
+    }
+
+    function revokeAdminRole(address account) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        _revokeRole(ADMIN_ROLE, account);
+    }
+
+    function revokeKeeperRole(address account) external onlyRole(ADMIN_ROLE) {
+        _revokeRole(KEEPER_ROLE, account);
+    }
+}

@@ -3,6 +3,8 @@ import { motion } from 'framer-motion';
 import { Wallet, Shield, TrendingUp, Users, Bot, Zap, Info, ChevronRight, Check } from 'lucide-react';
 import Card from '../components/ui/Card';
 import Button from '../components/ui/Button';
+import { useWeb3 } from '../context/Web3Context';
+import { useGold4X } from '../hooks/useGold4X';
 
 const FeatureCard = ({ icon: Icon, title, description, delay }) => (
     <motion.div
@@ -21,10 +23,68 @@ const FeatureCard = ({ icon: Icon, title, description, delay }) => (
 );
 
 const Investment = () => {
-    const [isWalletConnected, setIsWalletConnected] = useState(false); // Default to false as requested
+    const { account, connectWallet } = useWeb3();
+    // Use account as connection status
+    const isWalletConnected = !!account;
+
+    const { invest, txLoading } = useGold4X();
     const [amount, setAmount] = useState('');
+    const [referrer, setReferrer] = useState('');
 
     const [selectedToken, setSelectedToken] = useState('USDT');
+
+    const handleInvest = async () => {
+        if (!isWalletConnected) {
+            connectWallet();
+            return;
+        }
+        if (!amount || parseFloat(amount) <= 0) {
+            alert("Please enter a valid amount");
+            return;
+        }
+
+        const tokenMap = { 'USDT': 0, 'USDC': 1, 'G4X': 2 };
+        try {
+            // Use zero address if referrer is empty
+            const refAddr = referrer.trim() || "0x0000000000000000000000000000000000000000";
+
+            // Call smart contract
+            // NOTE: Updated hook to return tx receipt/hash hopefully
+            const txResponse = await invest(amount, refAddr, tokenMap[selectedToken]);
+
+            // Backend API Call
+            // We assume txResponse has .hash (if it's the tx object) or .transactionHash (if receipt)
+            const txHash = txResponse?.hash || txResponse?.transactionHash || "0x_simulated_hash_" + Date.now();
+
+            const numAmount = parseFloat(amount);
+            const fee = 50; // Hardcoded activation fee for now
+            const eligible = Math.max(0, numAmount - fee);
+            const g4xVal = selectedToken === 'G4X' ? 0 : parseFloat((numAmount / 1.1).toFixed(2));
+            const dailyNum = parseFloat((eligible * 0.006).toFixed(2));
+
+            await fetch('http://localhost:5000/api/invest', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    walletAddress: account,
+                    amount: numAmount,
+                    tokenType: selectedToken,
+                    txHash: txHash,
+                    referrerAddress: referrer, // Send optional referrer
+                    activationFee: fee,
+                    roiEligible: eligible,
+                    g4xReceived: g4xVal,
+                    dailyRoi: dailyNum
+                })
+            });
+
+            alert("Investment Successful!");
+            setAmount('');
+        } catch (e) {
+            console.error(e);
+            alert("Investment Failed: " + (e.reason || e.message));
+        }
+    };
 
     // Derived values for preview
     const numAmount = parseFloat(amount) || 0;
@@ -43,7 +103,7 @@ const Investment = () => {
         ? `$${formattedAmount} USD Value`
         : `$${formattedAmount} ${selectedToken}`;
 
-    const dailyRoi = (roiEligible * 0.007).toFixed(2); // 0.7%
+    const dailyRoi = (roiEligible * 0.006).toFixed(2); // 0.6%
 
     return (
         <div className="space-y-8">
@@ -126,48 +186,55 @@ const Investment = () => {
                                 <p className="text-xs text-gray-500">1 G4X = 1.10 USD | USDT/USDC investments get G4X rewards</p>
                             </div>
 
-                            <div className="space-y-2">
-                                <label className="text-sm text-gray-400 font-medium">Amount (Min: $100)</label>
-                                <input
-                                    type="number"
-                                    placeholder="Enter amount"
-                                    value={amount}
-                                    onChange={(e) => setAmount(e.target.value)}
-                                    className="w-full bg-black/40 border border-white/10 rounded-lg h-12 px-4 text-white focus:border-primary focus:outline-none transition-colors placeholder:text-gray-600"
-                                />
-                                <p className="text-xs text-gray-500">Minimum: 100 USDT</p>
+                            <div className="space-y-4">
+                                <label className="text-sm text-gray-400 font-medium">Select Package</label>
+                                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                                    {[100, 500, 1000, 5000, 10000].map((pkg) => (
+                                        <button
+                                            key={pkg}
+                                            onClick={() => setAmount(pkg.toString())}
+                                            className={`
+                                                relative p-4 rounded-xl border flex flex-col items-center justify-center gap-1 transition-all
+                                                ${parseFloat(amount) === pkg
+                                                    ? 'bg-highlight text-black border-highlight shadow-[0_0_20px_rgba(248,197,95,0.4)] scale-105 z-10'
+                                                    : 'bg-white/5 border-white/10 text-white hover:bg-white/10 hover:border-white/20'
+                                                }
+                                            `}
+                                        >
+                                            <span className="text-lg font-bold">{pkg} G4X</span>
+                                            <span className="text-xs opacity-70">Package</span>
+
+                                            {parseFloat(amount) === pkg && (
+                                                <div className="absolute -top-2 -right-2 bg-green-500 text-white rounded-full p-1 shadow-lg">
+                                                    <Check size={12} />
+                                                </div>
+                                            )}
+                                        </button>
+                                    ))}
+                                </div>
+                                <p className="text-xs text-center text-gray-500 mt-2">
+                                    Selected Investment: <span className="text-highlight font-bold">${amount || 0}</span>
+                                </p>
                             </div>
 
-                            <div className="space-y-2">
+                            <div className="space-y-2 mt-4">
                                 <label className="text-sm text-gray-400 font-medium">Referral Address (Optional)</label>
                                 <input
                                     type="text"
                                     placeholder="Enter referrer wallet address"
+                                    value={referrer}
+                                    onChange={(e) => setReferrer(e.target.value)}
                                     className="w-full bg-black/40 border border-white/10 rounded-lg h-12 px-4 text-white focus:border-primary focus:outline-none transition-colors placeholder:text-gray-600"
                                 />
                                 <p className="text-xs text-gray-500">Earn 15% direct commission on referrals</p>
                             </div>
 
-                            <div className="pt-2">
-                                <div className="flex justify-between text-xs text-gray-400 mb-2">
-                                    <span>Quick Invest: $100</span>
-                                    <span>$5000</span>
-                                </div>
-                                <input
-                                    type="range"
-                                    min="100"
-                                    max="5000"
-                                    step="100"
-                                    value={amount || 100}
-                                    onChange={(e) => setAmount(e.target.value)}
-                                    className="w-full h-1 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-highlight"
-                                />
-                            </div>
-
                             <Button
+                                onClick={handleInvest}
+                                disabled={txLoading}
                                 className="w-full h-12 text-lg font-bold text-highlight bg-[#1a1a2e] border border-highlight/30 shadow-[0_0_20px_rgba(248,197,95,0.1)] hover:shadow-[0_0_30px_rgba(248,197,95,0.3)] hover:border-highlight/60 hover:scale-[1.02] transition-all duration-300"
                             >
-                                <span className="mr-2">→</span> Invest Now
+                                <span className="mr-2">→</span> {txLoading ? "Processing..." : !isWalletConnected ? "Connect Wallet" : "Invest Now"}
                             </Button>
                         </div>
                     </Card>
@@ -205,7 +272,7 @@ const Investment = () => {
                             </div>
 
                             <div className="bg-highlight/10 border border-highlight/20 rounded-xl p-6 text-center">
-                                <p className="text-gray-400 text-sm mb-1">Expected Daily ROI (0.7%)</p>
+                                <p className="text-gray-400 text-sm mb-1">Expected Daily ROI (0.6%)</p>
                                 <p className="text-3xl font-bold text-highlight">${dailyRoi}</p>
                             </div>
                         </div>
@@ -223,7 +290,7 @@ const Investment = () => {
                 />
                 <FeatureCard
                     icon={TrendingUp}
-                    title="Daily 0.7% ROI"
+                    title="Daily 0.6% ROI"
                     description="Earn compounded returns up to 4x investment cap, processed automatically."
                     delay={0.5}
                 />

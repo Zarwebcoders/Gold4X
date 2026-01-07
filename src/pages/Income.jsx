@@ -118,7 +118,7 @@ const Income = () => {
                     amount="$0.00"
                     icon={TrendingUp}
                     details={[
-                        { label: 'Daily Rate', value: '0.7%' },
+                        { label: 'Daily Rate', value: '0.6%' },
                         { label: 'Investment', value: '$0' },
                         { label: 'Last Payout', value: '-' }
                     ]}

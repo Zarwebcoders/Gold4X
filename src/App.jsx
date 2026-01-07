@@ -12,25 +12,33 @@ import G4XWallet from './pages/G4XWallet';
 import Transactions from './pages/Transactions';
 import Support from './pages/Support';
 
+import Welcome from './pages/Welcome';
+
 function App() {
   return (
     <Router>
-      <Layout>
-        <Routes>
-          <Route path="/" element={<Dashboard />} />
-          <Route path="/investment" element={<Investment />} />
-          <Route path="/income" element={<Income />} />
-          <Route path="/reffralincome" element={<ReferralNetwork />} />
-          <Route path="/team" element={<TeamAnalytics />} />
-          <Route path="/autopool" element={<AutopoolBots />} />
-          <Route path="/rank" element={<RankSystem />} />
-          <Route path="/wallet" element={<G4XWallet />} />
-          <Route path="/transactions" element={<Transactions />} />
-          <Route path="/support" element={<Support />} />
-          {/* Placeholder routes for other links to prevent errors */}
-          <Route path="*" element={<div className="p-10 text-center text-gray-400">Page under construction</div>} />
-        </Routes>
-      </Layout>
+      <Routes>
+        <Route path="/welcome" element={<Welcome />} />
+
+        {/* Protected Routes wrapped in Layout */}
+        <Route path="/*" element={
+          <Layout>
+            <Routes>
+              <Route path="/" element={<Dashboard />} />
+              <Route path="/investment" element={<Investment />} />
+              <Route path="/income" element={<Income />} />
+              <Route path="/reffralincome" element={<ReferralNetwork />} />
+              <Route path="/team" element={<TeamAnalytics />} />
+              <Route path="/autopool" element={<AutopoolBots />} />
+              <Route path="/rank" element={<RankSystem />} />
+              <Route path="/wallet" element={<G4XWallet />} />
+              <Route path="/transactions" element={<Transactions />} />
+              <Route path="/support" element={<Support />} />
+              <Route path="*" element={<div className="p-10 text-center text-gray-400">Page under construction</div>} />
+            </Routes>
+          </Layout>
+        } />
+      </Routes>
     </Router>
   );
 }

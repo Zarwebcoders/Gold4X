@@ -1,0 +1,244 @@
+[
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "account",
+                "type": "address"
+            }
+        ],
+        "name": "balanceOf",
+        "outputs": [
+            {
+                "internalType": "uint256",
+                "name": "",
+                "type": "uint256"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "uint256",
+                "name": "amount",
+                "type": "uint256"
+            },
+            {
+                "internalType": "address",
+                "name": "referrer",
+                "type": "address"
+            },
+            {
+                "internalType": "uint8",
+                "name": "tokenType",
+                "type": "uint8"
+            }
+        ],
+        "name": "invest",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "claimMyROI",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "claimMyRankReward",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "user",
+                "type": "address"
+            }
+        ],
+        "name": "processROI",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "user",
+                "type": "address"
+            }
+        ],
+        "name": "users",
+        "outputs": [
+            {
+                "internalType": "uint256",
+                "name": "totalInvested",
+                "type": "uint256"
+            },
+            {
+                "internalType": "uint256",
+                "name": "roiEligible",
+                "type": "uint256"
+            },
+            {
+                "internalType": "uint256",
+                "name": "totalEarned",
+                "type": "uint256"
+            },
+            {
+                "internalType": "uint256",
+                "name": "totalWithdrawn",
+                "type": "uint256"
+            },
+            {
+                "internalType": "uint256",
+                "name": "lastROITimestamp",
+                "type": "uint256"
+            },
+            {
+                "internalType": "address",
+                "name": "referrer",
+                "type": "address"
+            },
+            {
+                "internalType": "uint256",
+                "name": "directs",
+                "type": "uint256"
+            },
+            {
+                "internalType": "uint256",
+                "name": "businessVolume",
+                "type": "uint256"
+            },
+            {
+                "internalType": "bool",
+                "name": "botActivated",
+                "type": "bool"
+            },
+            {
+                "internalType": "bool",
+                "name": "sosWithdrawn",
+                "type": "bool"
+            },
+            {
+                "internalType": "uint256",
+                "name": "autopoolPosition",
+                "type": "uint256"
+            },
+            {
+                "internalType": "bytes32",
+                "name": "currentRank",
+                "type": "bytes32"
+            },
+            {
+                "internalType": "uint256",
+                "name": "lastRankPayoutTimestamp",
+                "type": "uint256"
+            },
+            {
+                "internalType": "uint256",
+                "name": "lastRankPayoutMonth",
+                "type": "uint256"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "USDT",
+        "outputs": [
+            {
+                "internalType": "contract IERC20",
+                "name": "",
+                "type": "address"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "USDC",
+        "outputs": [
+            {
+                "internalType": "contract IERC20",
+                "name": "",
+                "type": "address"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "user",
+                "type": "address"
+            }
+        ],
+        "name": "canClaimROI",
+        "outputs": [
+            {
+                "internalType": "bool",
+                "name": "canClaim",
+                "type": "bool"
+            },
+            {
+                "internalType": "uint256",
+                "name": "timeUntilNext",
+                "type": "uint256"
+            },
+            {
+                "internalType": "uint256",
+                "name": "pendingAmount",
+                "type": "uint256"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "user",
+                "type": "address"
+            }
+        ],
+        "name": "canClaimRankSalary",
+        "outputs": [
+            {
+                "internalType": "bool",
+                "name": "canClaim",
+                "type": "bool"
+            },
+            {
+                "internalType": "uint256",
+                "name": "timeUntilNext",
+                "type": "uint256"
+            },
+            {
+                "internalType": "uint256",
+                "name": "salaryAmount",
+                "type": "uint256"
+            },
+            {
+                "internalType": "bytes32",
+                "name": "currentRank",
+                "type": "bytes32"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    }
+]

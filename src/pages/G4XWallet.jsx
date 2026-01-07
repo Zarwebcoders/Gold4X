@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import Card from '../components/ui/Card';
 import Button from '../components/ui/Button';
+import { useWeb3 } from '../context/Web3Context';
 
 const ActionButton = ({ icon: Icon, label }) => (
     <button className="flex items-center gap-2 px-6 py-3 rounded-full border border-yellow-500/30 text-yellow-500 hover:bg-yellow-500/10 transition-colors bg-black/40">
@@ -20,6 +21,7 @@ const ActionButton = ({ icon: Icon, label }) => (
 );
 
 const G4XWallet = () => {
+    const { userData, account } = useWeb3();
     return (
         <motion.div
             initial={{ opacity: 0, y: 20 }}
@@ -34,7 +36,7 @@ const G4XWallet = () => {
                     <div className="w-16 h-1 bg-highlight/50 rounded-full mb-6"></div>
                     <div className="mb-8">
                         {/* Placeholder for balance, e.g. 5,000 G4X */}
-                        <h1 className="text-5xl font-bold text-white mb-2 tracking-tight">—</h1>
+                        <h1 className="text-5xl font-bold text-white mb-2 tracking-tight">{userData?.g4xBalance || '0.0'} G4X</h1>
                         <p className="text-gray-400 text-sm">Equivalent to — at current rate</p>
                     </div>
                     <Button className="bg-highlight hover:bg-highlight/90 text-black font-bold px-8 py-6 rounded-full flex items-center gap-2">
@@ -61,7 +63,7 @@ const G4XWallet = () => {
                         <Wallet className="text-highlight" size={32} />
                         <h3 className="text-gray-400 font-bold text-sm uppercase tracking-wider">Wallet Address</h3>
                     </div>
-                    <h2 className="text-2xl font-bold text-white mb-6">—</h2>
+                    <h2 className="text-2xl font-bold text-white mb-6 text-sm md:text-xl truncate px-4">{account || 'Not Connected'}</h2>
                     <div className="bg-white/5 mx-auto max-w-[200px] py-2 rounded text-xs text-gray-500 cursor-pointer hover:bg-white/10 transition-colors">
                         Copy Address
                     </div>

@@ -3,6 +3,9 @@ import { motion } from 'framer-motion';
 import { TrendingUp, Users, DollarSign, Bot, Calendar, PieChart, Wallet, Zap, ArrowRight, Trophy, Coins } from 'lucide-react';
 import Card from '../components/ui/Card';
 import Button from '../components/ui/Button';
+import { useWeb3 } from '../context/Web3Context';
+import { useGold4X } from '../hooks/useGold4X';
+import { useState, useEffect } from 'react';
 
 const StatCard = ({ title, value, icon: Icon, delay }) => (
     <motion.div
@@ -35,12 +38,50 @@ const StatCard = ({ title, value, icon: Icon, delay }) => (
 );
 
 const Dashboard = () => {
+    const { userData, account } = useWeb3();
+    const { claimROI, claimRankReward, txLoading, getROIInfo, getRankSalaryInfo } = useGold4X();
+    const [roiInfo, setRoiInfo] = useState({ canClaim: false, pendingAmount: '0' });
+    const [rankInfo, setRankInfo] = useState({ canClaim: false, salaryAmount: '0' });
+
+    useEffect(() => {
+        const fetchInfo = async () => {
+            if (account) {
+                const rInfo = await getROIInfo();
+                if (rInfo) setRoiInfo(rInfo);
+
+                const sInfo = await getRankSalaryInfo();
+                if (sInfo) setRankInfo(sInfo);
+            }
+        };
+        fetchInfo();
+        const interval = setInterval(fetchInfo, 30000); // Poll every 30s
+        return () => clearInterval(interval);
+    }, [account, getROIInfo, getRankSalaryInfo]);
+
+    const handleClaimROI = async () => {
+        try {
+            await claimROI();
+            alert("ROI Claimed Successfully!");
+        } catch (e) {
+            alert("Claim Failed: " + e.message);
+        }
+    };
+
+    const handleClaimRank = async () => {
+        try {
+            await claimRankReward();
+            alert("Rank Salary Claimed Successfully!");
+        } catch (e) {
+            alert("Claim Failed: " + e.message);
+        }
+    };
+
     return (
         <div className="space-y-8">
             {/* Top Row Stats */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <StatCard title="Total Invested" value="$0.00" icon={DollarSign} delay={0.1} />
-                <StatCard title="Total Earnings" value="$0.00" icon={TrendingUp} delay={0.2} />
+                <StatCard title="Total Invested" value={`$${userData?.totalInvested || '0.00'}`} icon={DollarSign} delay={0.1} />
+                <StatCard title="Total Earnings" value={`$${userData?.totalEarned || '0.00'}`} icon={TrendingUp} delay={0.2} />
                 <motion.div
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
@@ -83,7 +124,17 @@ const Dashboard = () => {
                         <div className="flex justify-between items-start mb-6">
                             <div>
                                 <h3 className="text-gray-400 text-sm font-medium mb-1">Daily ROI Income</h3>
-                                <p className="text-3xl font-bold text-white">$0.00</p>
+                                <p className="text-3xl font-bold text-white">${roiInfo.pendingAmount || '0.00'}</p>
+                                {roiInfo.canClaim && (
+                                    <Button
+                                        size="sm"
+                                        className="mt-2 bg-green-500 hover:bg-green-600 text-white"
+                                        onClick={handleClaimROI}
+                                        disabled={txLoading}
+                                    >
+                                        {txLoading ? "Claiming..." : "Claim ROI"}
+                                    </Button>
+                                )}
                             </div>
                             <div className="p-2 bg-yellow-500/10 rounded-lg text-yellow-500">
                                 <Calendar size={24} />
@@ -92,8 +143,10 @@ const Dashboard = () => {
 
                         <div className="bg-black/40 rounded-xl p-4 border border-white/5 space-y-2">
                             <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Calculation</p>
-                            <p className="text-sm text-gray-300">0.7% daily on eligible</p>
-                            <p className="text-base font-bold text-highlight">$2,000 × 0.7% = $14.00</p>
+                            <p className="text-sm text-gray-300">0.6% daily on eligible</p>
+                            <p className="text-base font-bold text-highlight">
+                                ${userData?.roiEligible || '0.00'} × 0.6% = ${(parseFloat(userData?.roiEligible || 0) * 0.006).toFixed(2)}
+                            </p>
                         </div>
                     </Card>
                 </motion.div>
@@ -146,7 +199,7 @@ const Dashboard = () => {
                                     </div>
                                     <div>
                                         <p className="font-semibold text-white">ROI Earnings</p>
-                                        <p className="text-xs text-gray-400">Daily/Monthly returns (0.7%)</p>
+                                        <p className="text-xs text-gray-400">Daily/Monthly returns (0.6%)</p>
                                     </div>
                                 </div>
                                 <p className="text-lg font-bold text-primary">$0.00</p>
@@ -197,6 +250,30 @@ const Dashboard = () => {
                                 <span className="flex items-center gap-2"><TrendingUp size={18} /> Invest Now</span>
                                 <ArrowRight className="group-hover:translate-x-1 transition-transform" size={18} />
                             </Button>
+                            <Button
+                                className="w-full justify-between group bg-green-600 hover:bg-green-700 text-white border-green-500/30"
+                                onClick={handleClaimROI}
+                                disabled={txLoading || !roiInfo.canClaim}
+                            >
+                                <span className="flex items-center gap-2">
+                                    <Calendar size={18} />
+                                    {txLoading ? "Processing..." : roiInfo.canClaim ? `Claim ROI ($${roiInfo.pendingAmount})` : "Claim ROI (Wait 24h)"}
+                                </span>
+                                <ArrowRight className="group-hover:translate-x-1 transition-transform" size={18} />
+                            </Button>
+
+                            <Button
+                                className="w-full justify-between group bg-purple-600 hover:bg-purple-700 text-white border-purple-500/30"
+                                onClick={handleClaimRank}
+                                disabled={txLoading || !rankInfo.canClaim}
+                            >
+                                <span className="flex items-center gap-2">
+                                    <Trophy size={18} />
+                                    {rankInfo.canClaim ? `Claim Rank Salary ($${rankInfo.salaryAmount})` : "Claim Rank Salary (Locked)"}
+                                </span>
+                                <ArrowRight className="group-hover:translate-x-1 transition-transform" size={18} />
+                            </Button>
+
                             <Button className="w-full justify-between group" variant="outline">
                                 <span className="flex items-center gap-2"><Users size={18} /> View Network</span>
                                 <ArrowRight className="group-hover:translate-x-1 transition-transform" size={18} />
