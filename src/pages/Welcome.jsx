@@ -19,7 +19,7 @@ const Welcome = () => {
     const [checkingUser, setCheckingUser] = useState(false);
 
     // Backend URL
-    const API_URL = 'http://localhost:5000/api';
+    const API_URL = 'https://gold4x-backend.vercel.app/api';
 
     useEffect(() => {
         if (account) {

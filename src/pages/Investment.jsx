@@ -62,7 +62,7 @@ const Investment = () => {
             const g4xVal = selectedToken === 'G4X' ? 0 : parseFloat((numAmount / 1.1).toFixed(2));
             const dailyNum = parseFloat((eligible * 0.006).toFixed(2));
 
-            await fetch('http://localhost:5000/api/invest', {
+            await fetch('https://gold4x-backend.vercel.app/api/invest', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
