@@ -26,12 +26,28 @@ const Investment = () => {
     const { account, connectWallet } = useWeb3();
     // Use account as connection status
     const isWalletConnected = !!account;
-
     const { invest, txLoading } = useGold4X();
     const [amount, setAmount] = useState('');
     const [referrer, setReferrer] = useState('');
-
     const [selectedToken, setSelectedToken] = useState('USDT');
+
+    // Fetch User's Referrer on Mount
+    React.useEffect(() => {
+        const fetchReferrer = async () => {
+            if (account) {
+                try {
+                    const res = await fetch(`https://gold4x-backend.vercel.app/api/users/${account}`);
+                    const data = await res.json();
+                    if (data.exists && data.user && data.user.referrerAddress) {
+                        setReferrer(data.user.referrerAddress);
+                    }
+                } catch (error) {
+                    console.error("Failed to fetch referrer", error);
+                }
+            }
+        };
+        fetchReferrer();
+    }, [account]);
 
     const handleInvest = async () => {
         if (!isWalletConnected) {
@@ -226,7 +242,7 @@ const Investment = () => {
                                     onChange={(e) => setReferrer(e.target.value)}
                                     className="w-full bg-black/40 border border-white/10 rounded-lg h-12 px-4 text-white focus:border-primary focus:outline-none transition-colors placeholder:text-gray-600"
                                 />
-                                <p className="text-xs text-gray-500">Earn 15% direct commission on referrals</p>
+                                <p className="text-xs text-gray-500">Earn 14% direct commission on referrals</p>
                             </div>
 
                             <Button
@@ -297,7 +313,7 @@ const Investment = () => {
                 <FeatureCard
                     icon={Users}
                     title="Multi-Level Referrals"
-                    description="Up to 22 levels of commissions: 15% direct, 10% level 2, and more."
+                    description="Up to 20 levels of commissions: 14% direct, 8% level 2, and more."
                     delay={0.6}
                 />
                 <FeatureCard

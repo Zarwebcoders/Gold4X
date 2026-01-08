@@ -206,11 +206,11 @@ const Income = () => {
                         </thead>
                         <tbody className="divide-y divide-white/5">
                             {[
-                                { level: 1, percent: '15%' },
-                                { level: 2, percent: '10%' },
-                                { level: 3, percent: '5%' },
-                                ...Array.from({ length: 7 }, (_, i) => ({ level: i + 4, percent: '4%' })), // Levels 4-10
-                                ...Array.from({ length: 12 }, (_, i) => ({ level: i + 11, percent: '3.5%' })) // Levels 11-22
+                                { level: 1, percent: '14%' },
+                                { level: 2, percent: '8%' },
+                                { level: 3, percent: '4%' },
+                                { level: 4, percent: '2%' },
+                                ...Array.from({ length: 16 }, (_, i) => ({ level: i + 5, percent: '1%' })) // Levels 5-20
                             ].map((row) => (
                                 <tr key={row.level} className="hover:bg-white/5 transition-colors">
                                     <td className="py-3 pl-4">
