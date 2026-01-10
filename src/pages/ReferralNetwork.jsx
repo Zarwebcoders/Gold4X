@@ -14,6 +14,8 @@ import {
 } from 'lucide-react';
 import Card from '../components/ui/Card';
 import Button from '../components/ui/Button';
+import { useWeb3 } from '../context/Web3Context';
+import { REFERRAL_LEVELS } from '../utils/referralRules';
 
 const StatCard = ({ title, value, subtext, icon: Icon, colorClass = "text-highlight" }) => (
     <Card className="h-full">
@@ -31,6 +33,9 @@ const StatCard = ({ title, value, subtext, icon: Icon, colorClass = "text-highli
 );
 
 const ReferralNetwork = () => {
+    const { userData } = useWeb3();
+    const directs = userData?.directs || 0;
+
     return (
         <motion.div
             initial={{ opacity: 0, y: 20 }}
@@ -47,12 +52,12 @@ const ReferralNetwork = () => {
                     <div className="flex items-center gap-6 text-sm">
                         <div className="flex flex-col items-end">
                             <span className="text-gray-400">Upline</span>
-                            <span className="font-bold text-white">—</span>
+                            <span className="font-bold text-white">...</span>
                         </div>
                         <div className="h-8 w-px bg-white/10" />
                         <div className="flex flex-col items-end">
                             <span className="text-gray-400 text-highlight">Total Downline</span>
-                            <span className="font-bold text-white">—</span>
+                            <span className="font-bold text-white">...</span>
                         </div>
                     </div>
                 </div>
@@ -62,7 +67,7 @@ const ReferralNetwork = () => {
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 <StatCard
                     title="Direct Referrals"
-                    value="0"
+                    value={directs}
                     subtext="Active Members"
                     icon={UserPlus}
                     colorClass="text-yellow-500"
@@ -150,11 +155,27 @@ const ReferralNetwork = () => {
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-white/5">
-                            <tr className="text-center py-12">
-                                <td colSpan="6" className="py-8 text-gray-500">
-                                    Loading sponsor level data...
-                                </td>
-                            </tr>
+                            {REFERRAL_LEVELS.map((row) => {
+                                const isUnlocked = directs >= row.requiredDirects;
+                                return (
+                                    <tr key={row.level} className="hover:bg-white/5 transition-colors">
+                                        <td className="py-3 pl-4">
+                                            <span className={`inline-flex items-center justify-center w-8 h-6 rounded-full text-xs font-bold ${isUnlocked ? 'bg-highlight text-black' : 'bg-gray-700 text-gray-400'}`}>
+                                                {row.level}
+                                            </span>
+                                        </td>
+                                        <td className="py-3 text-white font-medium">{row.percent}</td>
+                                        <td className={`py-3 font-bold ${isUnlocked ? 'text-highlight' : 'text-gray-600'}`}>$0.00</td>
+                                        <td className={`py-3 ${isUnlocked ? 'text-highlight' : 'text-gray-600'}`}>-</td>
+                                        <td className="py-3 text-gray-300">0</td>
+                                        <td className="py-3 pr-4 text-right">
+                                            <span className={`text-xs border px-2 py-1 rounded ${isUnlocked ? 'text-green-500 border-green-500/30 bg-green-500/10' : 'text-red-500 border-red-500/30 bg-red-500/10'}`}>
+                                                {isUnlocked ? 'Active' : `Locked (${row.requiredDirects} Directs)`}
+                                            </span>
+                                        </td>
+                                    </tr>
+                                );
+                            })}
                         </tbody>
                     </table>
                 </div>

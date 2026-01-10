@@ -170,7 +170,7 @@ const Dashboard = () => {
 
                         <div className="bg-black/40 rounded-xl p-4 border border-white/5 space-y-2">
                             <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Referral Earnings</p>
-                            <p className="text-sm text-gray-300">15% L1 + 10% L2 + levels</p>
+                            <p className="text-sm text-gray-300">14% L1 + 8% L2 + levels</p>
                             <p className="text-base font-bold text-orange-400">Total: $0.00</p>
                         </div>
                     </Card>
