@@ -1,5 +1,6 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
+import { ethers } from 'ethers';
 import {
     DollarSign,
     Wallet,
@@ -74,8 +75,40 @@ const RankCard = ({ rank, salary, requirements, isHighlight }) => (
 );
 
 const Income = () => {
-    const { userData } = useWeb3();
+    const { userData, contract, account } = useWeb3();
     const directs = userData?.directs || 0;
+    const [levelData, setLevelData] = useState({});
+
+    useEffect(() => {
+        const fetchLevelData = async () => {
+            if (contract && account) {
+                const data = {};
+                // Fetch for all 20 levels
+                for (let i = 1; i <= 20; i++) {
+                    try {
+                        const result = await contract.getUserLevelIncome(account, i);
+                        data[i] = {
+                            totalEarned: ethers.formatEther(result[0]),
+                            lastPayout: ethers.formatEther(result[1]),
+                            totalPayouts: Number(result[2])
+                        };
+                    } catch (e) {
+                        console.error(`Error fetching level ${i} data:`, e);
+                    }
+                }
+                setLevelData(data);
+            }
+        };
+        fetchLevelData();
+    }, [contract, account]);
+
+    // Calculations
+    const totalInvested = userData?.totalInvested ? parseFloat(userData.totalInvested) : 0;
+    const maxEarnings = totalInvested * 4;
+    const totalEarned = userData?.totalEarned ? parseFloat(userData.totalEarned) : 0;
+    const remainingCap = Math.max(0, maxEarnings - totalEarned);
+    const progressPercent = maxEarnings > 0 ? (totalEarned / maxEarnings) * 100 : 0;
+
     return (
         <motion.div
             initial={{ opacity: 0, y: 20 }}
@@ -83,25 +116,18 @@ const Income = () => {
             className="space-y-8"
         >
             {/* Overview Stats */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <StatCard
                     title="Total Earned"
-                    value="$0.00"
+                    value={`$${totalEarned.toFixed(2)}`}
                     subtext="From all income sources"
                     icon={DollarSign}
                 />
                 <StatCard
                     title="Withdrawable Balance"
-                    value="$0.00"
+                    value={`${userData?.g4xBalance ? parseFloat(userData.g4xBalance).toFixed(2) : '0.00'} G4X`}
                     subtext="Available to withdraw"
                     icon={Wallet}
-                />
-                <StatCard
-                    title="Total Withdrawn"
-                    value="$0.00"
-                    subtext="Already withdrawn"
-                    icon={CreditCard}
-                    colorClass="text-blue-400"
                 />
             </div>
 
@@ -109,51 +135,51 @@ const Income = () => {
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 <DetailedIncomeCard
                     title="Direct Income"
-                    amount="$0.00"
+                    amount={`$${userData?.directIncome ? parseFloat(userData.directIncome).toFixed(2) : '0.00'}`}
                     icon={Handshake}
                     details={[
-                        { label: 'Direct Referrals', value: '0' },
+                        { label: 'Direct Referrals', value: userData?.directs || '0' },
                         { label: 'Per Direct', value: '$40' },
-                        { label: 'Reward Earned', value: '$0.00' }
+                        { label: 'Reward Earned', value: `$${userData?.directIncome ? parseFloat(userData.directIncome).toFixed(2) : '0.00'}` }
                     ]}
                 />
                 <DetailedIncomeCard
                     title="ROI Income"
-                    amount="$0.00"
+                    amount={`$${userData?.roiIncome ? parseFloat(userData.roiIncome).toFixed(2) : '0.00'}`}
                     icon={TrendingUp}
                     details={[
                         { label: 'Daily Rate', value: '0.6%' },
-                        { label: 'Investment', value: '$0' },
-                        { label: 'Last Payout', value: '-' }
+                        { label: 'Investment', value: `$${totalInvested.toFixed(2)}` },
+                        { label: 'Last Payout', value: userData?.lastROITimestamp ? new Date(parseInt(userData.lastROITimestamp) * 1000).toLocaleDateString() : '-' }
                     ]}
                 />
                 <DetailedIncomeCard
                     title="Sponsor Income"
-                    amount="$0.00"
+                    amount={`$${userData?.sponsorIncome ? parseFloat(userData.sponsorIncome).toFixed(2) : '0.00'}`}
                     icon={Users}
                     details={[
-                        { label: 'Active Levels', value: '0' },
+                        { label: 'Active Levels', value: '20' },
                         { label: 'Downline ROI', value: '14% L1 + levels' },
-                        { label: 'Network Volume', value: '$0' }
+                        { label: 'Network Volume', value: `$${userData?.businessVolume ? parseFloat(userData.businessVolume).toLocaleString() : '0'}` }
                     ]}
                 />
                 <DetailedIncomeCard
                     title="Autopool Income"
-                    amount="$0.00"
+                    amount={`$${userData?.autopoolIncome ? parseFloat(userData.autopoolIncome).toFixed(2) : '0.00'}`}
                     icon={Bot}
                     details={[
-                        { label: 'Bot Pools', value: '0 Active' },
-                        { label: 'Pool 1 Status', value: '-' },
-                        { label: 'Next Payout', value: '$0' }
+                        { label: 'Bot Pools', value: userData?.autopoolPosition > 0 ? 'Active' : 'Inactive' },
+                        { label: 'Pool Status', value: userData?.autopoolPosition > 0 ? `Pool ${userData.autopoolPosition}` : '-' },
+                        { label: 'Next Payout', value: userData?.poolInfo?.payoutAmount ? `$${parseFloat(userData.poolInfo.payoutAmount).toFixed(2)}` : '$0' }
                     ]}
                 />
                 <DetailedIncomeCard
                     title="Rank Income"
-                    amount="$0.00"
+                    amount={`$${userData?.rankIncome ? parseFloat(userData.rankIncome).toFixed(2) : '0.00'}`}
                     icon={Crown}
                     details={[
-                        { label: 'Current Rank', value: '-' },
-                        { label: 'Monthly Salary', value: '$0' },
+                        { label: 'Current Rank', value: userData?.currentRank || '-' },
+                        { label: 'Monthly Salary', value: `$${userData?.rankSalary || '0'}` },
                         { label: 'Next Rank', value: '-' }
                     ]}
                 />
@@ -166,25 +192,25 @@ const Income = () => {
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
                     <div className="p-4 rounded-lg bg-black/20 border border-white/5 border-l-4 border-l-yellow-500">
                         <p className="text-xs text-gray-500 uppercase font-bold mb-1">Total Investment</p>
-                        <p className="text-xl font-bold text-highlight">$0.00</p>
+                        <p className="text-xl font-bold text-highlight">${totalInvested.toFixed(2)}</p>
                     </div>
                     <div className="p-4 rounded-lg bg-black/20 border border-white/5 border-l-4 border-l-yellow-500">
                         <p className="text-xs text-gray-500 uppercase font-bold mb-1">Earnings Cap (4X)</p>
-                        <p className="text-xl font-bold text-highlight">$0.00</p>
+                        <p className="text-xl font-bold text-highlight">${maxEarnings.toFixed(2)}</p>
                     </div>
                     <div className="p-4 rounded-lg bg-black/20 border border-white/5 border-l-4 border-l-yellow-500">
                         <p className="text-xs text-gray-500 uppercase font-bold mb-1">Total Earned</p>
-                        <p className="text-xl font-bold text-highlight">$0.00</p>
+                        <p className="text-xl font-bold text-highlight">${totalEarned.toFixed(2)}</p>
                     </div>
                     <div className="p-4 rounded-lg bg-black/20 border border-white/5 border-l-4 border-l-yellow-500">
                         <p className="text-xs text-gray-500 uppercase font-bold mb-1">Remaining to Cap</p>
-                        <p className="text-xl font-bold text-highlight">$0.00</p>
+                        <p className="text-xl font-bold text-highlight">${remainingCap.toFixed(2)}</p>
                     </div>
                 </div>
 
                 <div className="space-y-2">
                     <p className="text-center text-sm text-gray-400">
-                        You've earned <span className="text-white font-bold">$0.00</span> out of <span className="text-white font-bold">$0.00</span> maximum earnings from your $0.00 investment (0%)
+                        You've earned <span className="text-white font-bold">${totalEarned.toFixed(2)}</span> out of <span className="text-white font-bold">${maxEarnings.toFixed(2)}</span> maximum earnings from your ${totalInvested.toFixed(2)} investment ({progressPercent.toFixed(1)}%)
                     </p>
                 </div>
             </Card>
@@ -211,6 +237,8 @@ const Income = () => {
                         <tbody className="divide-y divide-white/5">
                             {REFERRAL_LEVELS.map((row) => {
                                 const isUnlocked = directs >= row.requiredDirects;
+                                const data = levelData[row.level] || { totalEarned: '0', lastPayout: '0', totalPayouts: 0 };
+
                                 return (
                                     <tr key={row.level} className="hover:bg-white/5 transition-colors">
                                         <td className="py-3 pl-4">
@@ -219,9 +247,13 @@ const Income = () => {
                                             </span>
                                         </td>
                                         <td className="py-3 text-white font-medium">{row.percent}</td>
-                                        <td className={`py-3 font-bold ${isUnlocked ? 'text-highlight' : 'text-gray-600'}`}>$0.00</td>
-                                        <td className={`py-3 ${isUnlocked ? 'text-highlight' : 'text-gray-600'}`}>$0.00</td>
-                                        <td className="py-3 text-gray-300">0</td>
+                                        <td className={`py-3 font-bold ${isUnlocked ? 'text-highlight' : 'text-gray-600'}`}>
+                                            ${parseFloat(data.totalEarned).toFixed(2)}
+                                        </td>
+                                        <td className={`py-3 ${isUnlocked ? 'text-highlight' : 'text-gray-600'}`}>
+                                            ${parseFloat(data.lastPayout).toFixed(2)}
+                                        </td>
+                                        <td className="py-3 text-gray-300">{data.totalPayouts}</td>
                                         <td className="py-3 pr-4 text-right">
                                             <span className={`text-xs border px-2 py-1 rounded ${isUnlocked ? 'text-green-500 border-green-500/30 bg-green-500/10' : 'text-red-500 border-red-500/30 bg-red-500/10'}`}>
                                                 {isUnlocked ? 'Active' : `Locked (${row.requiredDirects} Directs)`}

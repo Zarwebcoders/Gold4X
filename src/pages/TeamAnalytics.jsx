@@ -1,5 +1,6 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
+import { ethers } from 'ethers';
 import {
     PieChart,
     Users,
@@ -10,6 +11,7 @@ import {
     Activity
 } from 'lucide-react';
 import Card from '../components/ui/Card';
+import { useWeb3 } from '../context/Web3Context';
 
 const TeamStatsCard = ({ title, value, subtext, icon: Icon, secondaryValue, secondaryLabel }) => (
     <Card className="h-full">
@@ -39,12 +41,55 @@ const RankCard = ({ rank, criteria, count, isActive }) => (
             <Trophy size={24} className={isActive ? 'text-highlight' : 'text-gray-400'} />
         </div>
         <h4 className="font-bold text-white text-sm mb-1">{rank}</h4>
-        <p className="text-[10px] text-gray-400 mb-2">{criteria}</p>
+        <p className="text-xs text-gray-500 mb-2">{criteria}</p>
         <h3 className="text-2xl font-bold text-white">{count}</h3>
     </div>
 );
 
 const TeamAnalytics = () => {
+    const { userData, contract, account } = useWeb3();
+    const [apiLevelData, setApiLevelData] = useState({});
+    const [contractLevelData, setContractLevelData] = useState({});
+
+    // Fetch API Data (Database)
+    useEffect(() => {
+        const fetchApiData = async () => {
+            if (account) {
+                try {
+                    const res = await fetch(`https://gold4x-backend.vercel.app/api/downline/${account}`);
+                    const data = await res.json();
+                    if (data.success) {
+                        setApiLevelData(data.levels);
+                    }
+                } catch (e) {
+                    console.error("Error fetching downline API:", e);
+                }
+            }
+        };
+        fetchApiData();
+    }, [account]);
+
+    // Fetch Contract Data (Commission)
+    useEffect(() => {
+        const fetchContractData = async () => {
+            if (contract && account) {
+                const data = {};
+                for (let i = 1; i <= 20; i++) {
+                    try {
+                        const result = await contract.getUserLevelIncome(account, i);
+                        data[i] = {
+                            totalEarned: ethers.formatEther(result[0])
+                        };
+                    } catch (e) {
+                        // console.error(`Error fetching level ${i} contract data:`, e);
+                    }
+                }
+                setContractLevelData(data);
+            }
+        };
+        fetchContractData();
+    }, [contract, account]);
+
     return (
         <motion.div
             initial={{ opacity: 0, y: 20 }}
@@ -66,11 +111,11 @@ const TeamAnalytics = () => {
                         </div>
                         <div className="flex items-center gap-4 text-sm">
                             <div className="flex flex-col items-end">
-                                <span className="text-highlight font-bold">Total Team Size: —</span>
+                                <span className="text-highlight font-bold">Total Team Size: {userData?.totalTeam || '0'}</span>
                             </div>
                             <div className="h-8 w-px bg-white/10" />
                             <div className="flex flex-col items-end">
-                                <span className="text-gray-400">Network BV: —</span>
+                                <span className="text-gray-400">Network BV: {userData?.businessVolume ? `$${parseFloat(userData.businessVolume).toLocaleString()}` : '—'}</span>
                             </div>
                         </div>
                     </div>
@@ -81,16 +126,16 @@ const TeamAnalytics = () => {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <TeamStatsCard
                     title="Active Team Members"
-                    value="—"
-                    subtext="Out of —"
+                    value={userData?.directs || '0'}
+                    subtext="Direct Active Members"
                     icon={Users}
                 />
                 <TeamStatsCard
                     title="Total Team Investment"
-                    value="—"
-                    subtext="Average: —"
+                    value={userData?.businessVolume ? `$${parseFloat(userData.businessVolume).toLocaleString()}` : '—'}
+                    subtext="Based on Network BV"
                     icon={Coins}
-                    secondaryValue="—"
+                    secondaryValue={userData?.sponsorIncome ? `$${parseFloat(userData.sponsorIncome).toFixed(2)}` : '—'}
                     secondaryLabel="Team Earnings Generated"
                 />
             </div>
@@ -106,23 +151,26 @@ const TeamAnalytics = () => {
                     <RankCard
                         rank="STAR"
                         criteria="BV: 75K | Directs: 12"
-                        count="8"
+                        count="-"
+                        isActive={userData?.currentRank === "STAR"}
                     />
                     <RankCard
                         rank="GOLD"
                         criteria="Directs: 15"
-                        count="12"
-                        isActive={true}
+                        count="-"
+                        isActive={userData?.currentRank === "GOLD"}
                     />
                     <RankCard
                         rank="DIAMOND"
                         criteria="Directs: 18"
-                        count="5"
+                        count="-"
+                        isActive={userData?.currentRank === "DIAMOND"}
                     />
                     <RankCard
                         rank="RUBY"
                         criteria="Directs: 20"
-                        count="2"
+                        count="-"
+                        isActive={userData?.currentRank === "RUBY"}
                     />
                 </div>
             </Card>
@@ -140,7 +188,7 @@ const TeamAnalytics = () => {
             <Card>
                 <div className="flex justify-between items-center mb-6">
                     <h3 className="text-lg font-bold text-white flex items-center gap-2">
-                        <Layers size={18} className="text-highlight" /> Downline Analytics by Level (22 Levels)
+                        <Layers size={18} className="text-highlight" /> Downline Analytics by Level (20 Levels)
                     </h3>
                 </div>
                 <div className="overflow-x-auto">
@@ -157,11 +205,31 @@ const TeamAnalytics = () => {
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-white/5">
-                            <tr className="text-center py-12">
-                                <td colSpan="7" className="py-8 text-gray-500">
-                                    Loading downline analytics...
-                                </td>
-                            </tr>
+                            {Array.from({ length: 20 }, (_, i) => i + 1).map((level) => {
+                                const apiData = apiLevelData[level] || { members: 0, investment: 0, bv: 0, earningsGenerated: 0 };
+                                const contractData = contractLevelData[level] || { totalEarned: '0' };
+                                const isUnlocked = userData?.directs >= (level <= 5 ? level : level <= 10 ? 7 : level <= 15 ? 10 : 12); // Approximate rule or import REFERRAL_LEVELS
+
+                                return (
+                                    <tr key={level} className="hover:bg-white/5 transition-colors">
+                                        <td className="py-3 pl-4">
+                                            <span className="inline-flex items-center justify-center w-8 h-6 rounded-full bg-gray-800 text-gray-400 text-xs font-bold">
+                                                {level}
+                                            </span>
+                                        </td>
+                                        <td className="py-3 text-white">{apiData.members}</td>
+                                        <td className="py-3 text-gray-300">${apiData.investment.toLocaleString()}</td>
+                                        <td className="py-3 text-highlight font-medium">${apiData.bv.toLocaleString()}</td>
+                                        <td className="py-3 text-gray-300">${apiData.earningsGenerated.toFixed(2)}</td>
+                                        <td className="py-3 text-highlight font-bold">${parseFloat(contractData.totalEarned).toFixed(2)}</td>
+                                        <td className="py-3 pr-4 text-right">
+                                            <span className={`text-xs px-2 py-1 rounded border ${isUnlocked ? 'text-green-500 border-green-500/30' : 'text-red-500 border-red-500/30'}`}>
+                                                {isUnlocked ? 'Active' : 'Locked'}
+                                            </span>
+                                        </td>
+                                    </tr>
+                                );
+                            })}
                         </tbody>
                     </table>
                 </div>

@@ -31,7 +31,7 @@ const G4XWallet = () => {
             {/* G4X Balance Header */}
             <Card className="border-highlight/30 bg-black/40 relative overflow-hidden">
                 <div className="absolute top-0 right-0 p-32 bg-highlight/5 blur-[100px] rounded-full pointer-events-none"></div>
-                <div className="relative z-10 flex flex-col items-center justify-center py-10 text-center">
+                <div className="relative z-10 flex flex-col items-center justify-center py-2 text-center">
                     <h2 className="text-xl font-bold text-highlight mb-6">Your G4X Balance</h2>
                     <div className="w-16 h-1 bg-highlight/50 rounded-full mb-6"></div>
                     <div className="mb-8">
@@ -39,7 +39,7 @@ const G4XWallet = () => {
                         <h1 className="text-5xl font-bold text-white mb-2 tracking-tight">{userData?.g4xBalance || '0.0'} G4X</h1>
                         <p className="text-gray-400 text-sm">Equivalent to — at current rate</p>
                     </div>
-                    <Button className="bg-highlight hover:bg-highlight/90 text-black font-bold px-8 py-6 rounded-full flex items-center gap-2">
+                    <Button className="bg-highlight hover:bg-highlight/90 text-black font-bold px-8 py-3 rounded-full flex items-center gap-2">
                         <DollarSign size={20} /> Convert to USDT
                     </Button>
                 </div>
@@ -64,7 +64,17 @@ const G4XWallet = () => {
                         <h3 className="text-gray-400 font-bold text-sm uppercase tracking-wider">Wallet Address</h3>
                     </div>
                     <h2 className="text-2xl font-bold text-white mb-6 text-sm md:text-xl truncate px-4">{account || 'Not Connected'}</h2>
-                    <div className="bg-white/5 mx-auto max-w-[200px] py-2 rounded text-xs text-gray-500 cursor-pointer hover:bg-white/10 transition-colors">
+                    <div
+                        onClick={() => {
+                            if (account) {
+                                navigator.clipboard.writeText(account);
+                                alert("Wallet address copied!");
+                            } else {
+                                alert("Connect wallet first!");
+                            }
+                        }}
+                        className="bg-white/5 mx-auto max-w-[200px] py-2 rounded text-xs text-gray-500 cursor-pointer hover:bg-white/10 transition-colors"
+                    >
                         Copy Address
                     </div>
                 </Card>

@@ -30,6 +30,7 @@ const Investment = () => {
     const [amount, setAmount] = useState('');
     const [referrer, setReferrer] = useState('');
     const [selectedToken, setSelectedToken] = useState('USDT');
+    const [isDropdownOpen, setIsDropdownOpen] = useState(false);
 
     // Fetch User's Referrer on Mount
     React.useEffect(() => {
@@ -145,7 +146,9 @@ const Investment = () => {
                         <div className="bg-primary text-white p-1.5 rounded">
                             <Wallet size={16} />
                         </div>
-                        <span className="font-mono font-medium text-white">0xA887...8854 Connected</span>
+                        <span className="font-mono font-medium text-white">
+                            {account ? `${account.slice(0, 6)}...${account.slice(-4)}` : 'Connected'} Connected
+                        </span>
                     </div>
                 )}
             </motion.div>
@@ -186,18 +189,44 @@ const Investment = () => {
                             <div className="space-y-2">
                                 <label className="text-sm text-gray-400 font-medium">Select Token</label>
                                 <div className="relative">
-                                    <select
-                                        className="w-full bg-black/40 border border-white/10 rounded-lg h-12 px-4 text-white appearance-none focus:border-primary focus:outline-none transition-colors"
-                                        onChange={(e) => setSelectedToken(e.target.value)}
-                                        value={selectedToken}
+                                    <button
+                                        onClick={() => setIsDropdownOpen(!isDropdownOpen)}
+                                        className={`w-full bg-black/40 border ${isDropdownOpen ? 'border-primary' : 'border-white/10'} rounded-lg h-12 px-4 flex items-center justify-between transition-colors hover:bg-white/5`}
                                     >
-                                        <option value="USDT">USDT (Tether USD)</option>
-                                        <option value="USDC">USDC (USD Coin)</option>
-                                        <option value="G4X">G4X (Gold4X Token)</option>
-                                    </select>
-                                    <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400">
-                                        <ChevronRight className="rotate-90" size={16} />
-                                    </div>
+                                        <span className="text-white">
+                                            {selectedToken === 'USDT' && "USDT (Tether USD)"}
+                                            {selectedToken === 'USDC' && "USDC (USD Coin)"}
+                                            {selectedToken === 'G4X' && "G4X (Gold4X Token)"}
+                                        </span>
+                                        <ChevronRight className={`text-gray-400 transition-transform duration-200 ${isDropdownOpen ? '-rotate-90' : 'rotate-90'}`} size={16} />
+                                    </button>
+
+                                    {isDropdownOpen && (
+                                        <motion.div
+                                            initial={{ opacity: 0, y: -10 }}
+                                            animate={{ opacity: 1, y: 0 }}
+                                            exit={{ opacity: 0, y: -10 }}
+                                            className="absolute top-full left-0 right-0 mt-2 bg-[#0a0a0f] border border-white/10 rounded-xl overflow-hidden z-50 shadow-2xl shadow-black/50"
+                                        >
+                                            {[
+                                                { value: 'USDT', label: 'USDT (Tether USD)' },
+                                                { value: 'USDC', label: 'USDC (USD Coin)' },
+                                                { value: 'G4X', label: 'G4X (Gold4X Token)' }
+                                            ].map((opt) => (
+                                                <button
+                                                    key={opt.value}
+                                                    onClick={() => {
+                                                        setSelectedToken(opt.value);
+                                                        setIsDropdownOpen(false);
+                                                    }}
+                                                    className={`w-full text-left px-4 py-3 text-sm transition-colors flex items-center justify-between group ${selectedToken === opt.value ? 'bg-highlight/10 text-highlight' : 'text-gray-300 hover:bg-white/5 hover:text-white'}`}
+                                                >
+                                                    {opt.label}
+                                                    {selectedToken === opt.value && <Check size={16} />}
+                                                </button>
+                                            ))}
+                                        </motion.div>
+                                    )}
                                 </div>
                                 <p className="text-xs text-gray-500">1 G4X = 1.10 USD | USDT/USDC investments get G4X rewards</p>
                             </div>

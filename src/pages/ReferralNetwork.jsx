@@ -1,5 +1,6 @@
 import React from 'react';
 import { motion } from 'framer-motion';
+import { ethers } from 'ethers';
 import {
     Users,
     TrendingUp,
@@ -33,8 +34,39 @@ const StatCard = ({ title, value, subtext, icon: Icon, colorClass = "text-highli
 );
 
 const ReferralNetwork = () => {
-    const { userData } = useWeb3();
+    const { userData, account, contract } = useWeb3();
     const directs = userData?.directs || 0;
+    const [levelData, setLevelData] = React.useState({});
+
+    React.useEffect(() => {
+        const fetchLevelData = async () => {
+            console.log("Fetching level data...", { account, contract: !!contract });
+            if (account && contract) {
+                try {
+                    const data = {};
+                    // Loop through levels 1 to 20
+                    for (let i = 1; i <= 20; i++) {
+                        const levelInfo = await contract.getUserLevelIncome(account, i);
+                        console.log(`Level ${i} raw:`, levelInfo);
+                        if (levelInfo.totalEarned > 0n) {
+                            console.log(`Level ${i} has earnings!`);
+                        }
+                        data[i] = {
+                            totalEarned: ethers.formatEther(levelInfo.totalEarned),
+                            // lastPayout is an amount, not a date, based on user feedback
+                            lastPayout: ethers.formatEther(levelInfo.lastPayout),
+                            totalPayouts: Number(levelInfo.totalPayouts)
+                        };
+                    }
+                    console.log("Final Level Data:", data);
+                    setLevelData(data);
+                } catch (error) {
+                    console.error("Error fetching level data:", error);
+                }
+            }
+        };
+        fetchLevelData();
+    }, [account, contract]);
 
     return (
         <motion.div
@@ -52,12 +84,16 @@ const ReferralNetwork = () => {
                     <div className="flex items-center gap-6 text-sm">
                         <div className="flex flex-col items-end">
                             <span className="text-gray-400">Upline</span>
-                            <span className="font-bold text-white">...</span>
+                            <span className="font-bold text-white">
+                                {userData?.referrer && userData.referrer !== ethers.ZeroAddress
+                                    ? `${userData.referrer.slice(0, 6)}...${userData.referrer.slice(-4)}`
+                                    : 'None'}
+                            </span>
                         </div>
                         <div className="h-8 w-px bg-white/10" />
                         <div className="flex flex-col items-end">
                             <span className="text-gray-400 text-highlight">Total Downline</span>
-                            <span className="font-bold text-white">...</span>
+                            <span className="font-bold text-white">{userData?.totalTeam || '0'}</span>
                         </div>
                     </div>
                 </div>
@@ -74,14 +110,14 @@ const ReferralNetwork = () => {
                 />
                 <StatCard
                     title="Business Volume"
-                    value="$0.00"
+                    value={userData?.businessVolume ? `$${parseFloat(userData.businessVolume).toLocaleString()}` : "$0.00"}
                     subtext="Total Network BV"
                     icon={TrendingUp}
                     colorClass="text-yellow-500"
                 />
                 <StatCard
                     title="Referral Earnings"
-                    value="$0.00"
+                    value={userData?.totalEarned ? `$${parseFloat(userData.totalEarned).toFixed(2)}` : "$0.00"}
                     subtext="Direct + Sponsor"
                     icon={Coins}
                     colorClass="text-blue-400"
@@ -97,9 +133,19 @@ const ReferralNetwork = () => {
                     <p className="text-gray-400 text-sm mb-3">Share to Earn Commissions</p>
                     <div className="flex flex-col md:flex-row gap-4">
                         <div className="flex-1 bg-black/60 border border-white/10 rounded-lg px-4 py-3 text-gray-300 font-mono text-sm truncate">
-                            https://gold4x-platform.com/register?ref=G4XREF104
+                            {account ? `${window.location.origin}/register?ref=${account}` : 'Connect Wallet to see link'}
                         </div>
-                        <Button className="shrink-0 bg-highlight/10 text-highlight border-highlight/20 hover:bg-highlight hover:text-black">
+                        <Button
+                            className="shrink-0 bg-highlight/10 text-highlight border-highlight/20 hover:bg-highlight hover:text-black"
+                            onClick={() => {
+                                if (account) {
+                                    navigator.clipboard.writeText(`${window.location.origin}/register?ref=${account}`);
+                                    alert("Referral link copied!");
+                                } else {
+                                    alert("Please connect wallet first");
+                                }
+                            }}
+                        >
                             <Copy size={18} className="mr-2" /> Copy
                         </Button>
                     </div>
@@ -135,11 +181,11 @@ const ReferralNetwork = () => {
                 </div>
             </Card>
 
-            {/* Sponsor Earnings Grid (22 Levels) */}
+            {/* Sponsor Earnings Grid (20 Levels) */}
             <Card>
                 <div className="flex justify-between items-center mb-6">
                     <h3 className="text-lg font-bold text-white flex items-center gap-2">
-                        <Layers size={18} className="text-highlight" /> Sponsor Earnings by Level (22 Levels)
+                        <Layers size={18} className="text-highlight" /> Sponsor Earnings by Level (20 Levels)
                     </h3>
                 </div>
                 <div className="overflow-x-auto">
@@ -165,9 +211,15 @@ const ReferralNetwork = () => {
                                             </span>
                                         </td>
                                         <td className="py-3 text-white font-medium">{row.percent}</td>
-                                        <td className={`py-3 font-bold ${isUnlocked ? 'text-highlight' : 'text-gray-600'}`}>$0.00</td>
-                                        <td className={`py-3 ${isUnlocked ? 'text-highlight' : 'text-gray-600'}`}>-</td>
-                                        <td className="py-3 text-gray-300">0</td>
+                                        <td className={`py-3 font-bold ${isUnlocked ? 'text-highlight' : 'text-gray-600'}`}>
+                                            ${levelData[row.level]?.totalEarned || '0.00'}
+                                        </td>
+                                        <td className={`py-3 ${isUnlocked ? 'text-highlight' : 'text-gray-600'}`}>
+                                            ${levelData[row.level]?.lastPayout || '0.00'}
+                                        </td>
+                                        <td className="py-3 text-gray-300">
+                                            {levelData[row.level]?.totalPayouts || 0}
+                                        </td>
                                         <td className="py-3 pr-4 text-right">
                                             <span className={`text-xs border px-2 py-1 rounded ${isUnlocked ? 'text-green-500 border-green-500/30 bg-green-500/10' : 'text-red-500 border-red-500/30 bg-red-500/10'}`}>
                                                 {isUnlocked ? 'Active' : `Locked (${row.requiredDirects} Directs)`}

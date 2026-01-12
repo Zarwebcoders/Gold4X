@@ -6,6 +6,7 @@ import Button from '../components/ui/Button';
 import { useWeb3 } from '../context/Web3Context';
 import { useGold4X } from '../hooks/useGold4X';
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 
 const StatCard = ({ title, value, icon: Icon, delay }) => (
     <motion.div
@@ -42,6 +43,7 @@ const Dashboard = () => {
     const { claimROI, claimRankReward, txLoading, getROIInfo, getRankSalaryInfo } = useGold4X();
     const [roiInfo, setRoiInfo] = useState({ canClaim: false, pendingAmount: '0' });
     const [rankInfo, setRankInfo] = useState({ canClaim: false, salaryAmount: '0' });
+    const navigate = useNavigate();
 
     useEffect(() => {
         const fetchInfo = async () => {
@@ -92,7 +94,9 @@ const Dashboard = () => {
                             <div>
                                 <h3 className="text-gray-400 text-sm font-medium mb-1">Active Bots</h3>
                                 <div className="flex items-baseline gap-2">
-                                    <p className="text-2xl lg:text-3xl font-bold text-white group-hover:text-highlight transition-colors">0</p>
+                                    <p className="text-2xl lg:text-3xl font-bold text-white group-hover:text-highlight transition-colors">
+                                        {userData?.activeBotCount || 0}
+                                    </p>
                                     <span className="text-sm text-gray-500">Total bots</span>
                                 </div>
                             </div>
@@ -161,7 +165,7 @@ const Dashboard = () => {
                         <div className="flex justify-between items-start mb-6">
                             <div>
                                 <h3 className="text-gray-400 text-sm font-medium mb-1">Total Referrals</h3>
-                                <p className="text-3xl font-bold text-white">0</p>
+                                <p className="text-3xl font-bold text-white">{userData?.directs || 0}</p>
                             </div>
                             <div className="p-2 bg-orange-500/10 rounded-lg text-orange-500">
                                 <Users size={24} />
@@ -171,7 +175,7 @@ const Dashboard = () => {
                         <div className="bg-black/40 rounded-xl p-4 border border-white/5 space-y-2">
                             <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Referral Earnings</p>
                             <p className="text-sm text-gray-300">14% L1 + 8% L2 + levels</p>
-                            <p className="text-base font-bold text-orange-400">Total: $0.00</p>
+                            <p className="text-base font-bold text-orange-400">Total: ${userData?.totalEarned ? parseFloat(userData.totalEarned).toFixed(2) : '0.00'}</p>
                         </div>
                     </Card>
                 </motion.div>
@@ -202,7 +206,7 @@ const Dashboard = () => {
                                         <p className="text-xs text-gray-400">Daily/Monthly returns (0.6%)</p>
                                     </div>
                                 </div>
-                                <p className="text-lg font-bold text-primary">$0.00</p>
+                                <p className="text-lg font-bold text-primary">${userData?.roiIncome ? parseFloat(userData.roiIncome).toFixed(2) : '0.00'}</p>
                             </div>
 
                             <div className="bg-black/40 p-4 rounded-xl border border-white/5 flex justify-between items-center group hover:border-highlight/30 transition-colors">
@@ -215,7 +219,7 @@ const Dashboard = () => {
                                         <p className="text-xs text-gray-400">Direct (3x$40) & 22 levels</p>
                                     </div>
                                 </div>
-                                <p className="text-lg font-bold text-highlight">$0.00</p>
+                                <p className="text-lg font-bold text-highlight">${userData?.totalEarned ? parseFloat(userData.totalEarned).toFixed(2) : '0.00'}</p>
                             </div>
 
                             <div className="bg-black/40 p-4 rounded-xl border border-white/5 flex justify-between items-center group hover:border-orange-500/30 transition-colors">
@@ -228,7 +232,7 @@ const Dashboard = () => {
                                         <p className="text-xs text-gray-400">Available (10% fee)</p>
                                     </div>
                                 </div>
-                                <p className="text-lg font-bold text-orange-500">$0.00</p>
+                                <p className="text-lg font-bold text-orange-500">${userData?.g4xBalance ? parseFloat(userData.g4xBalance).toFixed(2) : '0.00'}</p>
                             </div>
                         </div>
                     </Card>
@@ -246,7 +250,7 @@ const Dashboard = () => {
                             Quick Actions
                         </h3>
                         <div className="space-y-4">
-                            <Button className="w-full justify-between group" variant="primary">
+                            <Button className="w-full justify-between group" variant="primary" onClick={() => navigate('/investment')}>
                                 <span className="flex items-center gap-2"><TrendingUp size={18} /> Invest Now</span>
                                 <ArrowRight className="group-hover:translate-x-1 transition-transform" size={18} />
                             </Button>
@@ -274,7 +278,7 @@ const Dashboard = () => {
                                 <ArrowRight className="group-hover:translate-x-1 transition-transform" size={18} />
                             </Button>
 
-                            <Button className="w-full justify-between group" variant="outline">
+                            <Button onClick={() => navigate('/reffralincome')} className="w-full justify-between group" variant="outline">
                                 <span className="flex items-center gap-2"><Users size={18} /> View Network</span>
                                 <ArrowRight className="group-hover:translate-x-1 transition-transform" size={18} />
                             </Button>
@@ -304,28 +308,37 @@ const Dashboard = () => {
                                         <Bot size={24} />
                                     </div>
                                     <div>
-                                        <h4 className="font-bold text-lg">Regular Bot Pool 1</h4>
-                                        <p className="text-sm text-gray-400">Position: -</p>
+                                        <h4 className="font-bold text-lg">
+                                            {userData?.autopoolPosition > 0
+                                                ? `Regular Bot Pool ${userData.autopoolPosition}`
+                                                : 'No Active Autopool'}
+                                        </h4>
+                                        <p className="text-sm text-gray-400">
+                                            Position: {userData?.autopoolPosition > 0 ? 'Active' : '-'}
+                                        </p>
                                     </div>
                                 </div>
                             </div>
 
-                            {/* Progress Bar */}
+                            {/* Progress Bar - Simulated or Default for now */}
                             <div className="mb-6">
                                 <div className="flex justify-between text-xs text-gray-400 mb-2">
                                     <span>Progress</span>
-                                    <span>0%</span>
+                                    <span>{userData?.autopoolPosition > 0 ? 'Processing' : '0%'}</span>
                                 </div>
                                 <div className="w-full h-2 bg-gray-700 rounded-full overflow-hidden">
-                                    <div className="w-[0%] h-full bg-gradient-to-r from-highlight to-primary"></div>
+                                    {/* Indeterminate progress bar if active */}
+                                    <div className={`h-full bg-gradient-to-r from-highlight to-primary ${userData?.autopoolPosition > 0 ? 'w-full animate-pulse' : 'w-[0%]'}`}></div>
                                 </div>
                             </div>
 
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-4 border-t border-white/5">
                                 <div>
                                     <p className="text-sm text-gray-400">Payout per User</p>
-                                    <p className="text-2xl font-bold text-highlight">$0.00 USDT</p>
-                                    <p className="text-xs text-gray-500 mt-1">Rebirth Fee: $100 (Auto-Place Next Pool)</p>
+                                    <p className="text-2xl font-bold text-highlight">
+                                        ${userData?.poolInfo?.payoutAmount ? parseFloat(userData.poolInfo.payoutAmount).toFixed(2) : '0.00'} USDT
+                                    </p>
+                                    <p className="text-xs text-gray-500 mt-1">Rebirth Fee: ${userData?.poolInfo?.rebirthFee ? parseFloat(userData.poolInfo.rebirthFee).toFixed(2) : '100'} (Auto)</p>
                                 </div>
                                 <div className="md:text-right">
                                     <p className="text-xs text-gray-400">Est. Payout</p>
@@ -348,7 +361,9 @@ const Dashboard = () => {
                             G4X Token Balance
                         </h3>
                         <div className="h-full flex flex-col items-center justify-center py-8">
-                            <p className="text-4xl font-bold text-highlight mb-2">0 G4X</p>
+                            <p className="text-4xl font-bold text-highlight mb-2">
+                                {userData?.g4xBalance ? parseFloat(userData.g4xBalance).toFixed(2) : '0.00'} G4X
+                            </p>
                             <p className="text-sm text-gray-400">Rate: G4X/USDT | Sell Anytime</p>
                         </div>
                     </Card>
@@ -365,13 +380,15 @@ const Dashboard = () => {
                 >
                     <Card className="h-full text-center">
                         <div className="inline-block px-4 py-1 rounded-full bg-highlight/20 text-highlight text-xs font-bold uppercase tracking-wider mb-4 border border-highlight/20">
-                            Star Rank
+                            {userData?.currentRank && userData.currentRank !== "No Rank" ? `${userData.currentRank} RANK` : 'NO RANK'}
                         </div>
-                        <h4 className="text-gray-400 mb-2">Business Volume: <span className="text-white font-bold">$0</span></h4>
-                        <p className="text-gray-400 mb-6">Directs: <span className="text-white">12/12</span></p>
+                        <h4 className="text-gray-400 mb-2">Business Volume: <span className="text-white font-bold">${userData?.businessVolume ? parseFloat(userData.businessVolume).toLocaleString() : '0'}</span></h4>
+                        <p className="text-gray-400 mb-6">Directs: <span className="text-white">{userData?.directs || 0}</span></p>
 
                         <div className="py-4 border-t border-white/5">
-                            <p className="text-2xl font-bold text-highlight">$0 Monthly Salary</p>
+                            <p className="text-2xl font-bold text-highlight">
+                                ${userData?.rankSalary ? parseFloat(userData.rankSalary).toLocaleString() : '0'} Monthly Salary
+                            </p>
                         </div>
                     </Card>
                 </motion.div>
@@ -414,10 +431,23 @@ const Dashboard = () => {
                         <div className="text-center md:text-left">
                             <p className="text-sm text-gray-400 mb-1">Your Referral Link</p>
                             <code className="bg-black/40 px-3 py-1 rounded text-primary text-sm break-all">
-                                https://gold4x.in/register?ref=YOUR_ID
+                                {account ? `${window.location.origin}/register?ref=${account}` : 'Connect Wallet to see link'}
                             </code>
                         </div>
-                        <Button variant="outline" size="sm">Copy Link</Button>
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                                if (account) {
+                                    navigator.clipboard.writeText(`${window.location.origin}/register?ref=${account}`);
+                                    alert("Referral link copied!");
+                                } else {
+                                    alert("Please connect wallet first");
+                                }
+                            }}
+                        >
+                            Copy Link
+                        </Button>
                     </div>
                 </Card>
             </motion.div>

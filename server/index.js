@@ -167,6 +167,66 @@ app.post('/api/register', async (req, res) => {
     }
 });
 
+// 4. Get Downline Analytics (Level-wise)
+app.get('/api/downline/:address', async (req, res) => {
+    try {
+        const rootAddress = req.params.address.toLowerCase();
+        let currentLevelUsers = [rootAddress];
+        const levelStats = {};
+
+        // Loop for 20 levels
+        for (let level = 1; level <= 20; level++) {
+            // Find users referred by currentLevelUsers
+            const usersInLevel = await User.find({ referrerAddress: { $in: currentLevelUsers } });
+
+            if (usersInLevel.length === 0) break;
+
+            const userAddresses = usersInLevel.map(u => u.walletAddress);
+
+            // Calc stats for this level
+            // 1. Members count
+            const memberCount = usersInLevel.length;
+
+            // 2. Total Investment & Earnings from Investment collection
+            const investments = await Investment.find({ walletAddress: { $in: userAddresses } });
+
+            const totalInvestment = investments.reduce((sum, inv) => sum + (inv.amount || 0), 0);
+            const totalRevenue = investments.reduce((sum, inv) => sum + (inv.g4xReceived || 0) + (inv.dailyRoi || 0), 0);
+            const totalBV = totalInvestment; // Assuming BV = Investment for now
+
+            levelStats[level] = {
+                members: memberCount,
+                investment: totalInvestment,
+                bv: totalBV,
+                earningsGenerated: totalRevenue
+            };
+
+            // Prepare for next level
+            currentLevelUsers = userAddresses;
+        }
+
+        res.json({ success: true, levels: levelStats });
+
+    } catch (error) {
+        console.error("Downline API Error:", error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// 5. Get Transaction History
+app.get('/api/transactions/:address', async (req, res) => {
+    try {
+        const address = req.params.address.toLowerCase();
+        // Currently only fetching Investments as "Transactions"
+        // If there were Withdrawals collection, we would merge them here
+        const investments = await Investment.find({ walletAddress: address }).sort({ timestamp: -1 });
+
+        res.json({ success: true, transactions: investments });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
 app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
 });

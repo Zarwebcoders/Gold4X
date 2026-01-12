@@ -87,7 +87,10 @@ contract Gold4XSystem is ERC20, AccessControl, Pausable, ReentrancyGuard {
     // Mappings
     mapping(address => User) public users;
     mapping(address => uint256) public directIncome;
+    mapping(address => uint256) public roiIncome; // New mapping for ROI tracking
     mapping(address => uint256) public sponsorIncome;
+
+
     mapping(address => uint256) public autopoolIncome;
     mapping(address => uint256) public rankIncome;
     mapping(address => uint256) public withdrawableBalance;
@@ -315,12 +318,13 @@ contract Gold4XSystem is ERC20, AccessControl, Pausable, ReentrancyGuard {
     function _processAutomaticDirectIncome(address user) private {
         uint256 userDirects = users[user].directs;
 
-        if (userDirects >= 3 && paidDirects[user] < 3) {
-            uint256 directRewards = 40 * 1e18;
+        // Pay 40 Tokens for every direct referral starting from the 3rd one
+        if (userDirects >= 3) {
+            uint256 directRewards = 30 * 1e18;
 
             directIncome[user] += directRewards;
             users[user].totalEarned += directRewards;
-            paidDirects[user] = userDirects;
+            paidDirects[user] = userDirects; // Keep track just in case, though not strictly needed for this logic anymore
 
             // Transfer G4X directly to user wallet
             require(balanceOf(adminWallet) >= directRewards, "Insufficient G4X in admin wallet");
@@ -371,6 +375,7 @@ contract Gold4XSystem is ERC20, AccessControl, Pausable, ReentrancyGuard {
 
         userData.totalEarned += roiAmount;
         userData.lastROITimestamp = block.timestamp;
+        roiIncome[user] += roiAmount;
 
         // Transfer G4X directly to user wallet
         require(balanceOf(adminWallet) >= roiAmount, "Insufficient G4X in admin wallet");
@@ -407,6 +412,7 @@ contract Gold4XSystem is ERC20, AccessControl, Pausable, ReentrancyGuard {
 
         userData.totalEarned += roiAmount;
         userData.lastROITimestamp = block.timestamp;
+        roiIncome[msg.sender] += roiAmount;
 
         // Transfer G4X directly to user wallet
         require(balanceOf(adminWallet) >= roiAmount, "Insufficient G4X in admin wallet");
@@ -454,6 +460,7 @@ contract Gold4XSystem is ERC20, AccessControl, Pausable, ReentrancyGuard {
             if (roiAmount > 0) {
                 userData.totalEarned += roiAmount;
                 userData.lastROITimestamp = block.timestamp;
+                roiIncome[user] += roiAmount;
 
                 // Transfer G4X directly to user wallet
                 require(balanceOf(adminWallet) >= roiAmount, "Insufficient G4X in admin wallet");
@@ -795,6 +802,19 @@ contract Gold4XSystem is ERC20, AccessControl, Pausable, ReentrancyGuard {
         
         uint256 netSalary = ranks[userData.currentRank].netSalary;
         return (true, 0, netSalary, userData.currentRank);
+    }
+
+    function getUserBotCount(address user) external view returns (uint256) {
+        return users[user].activeBotPositions.length;
+    }
+
+    function getUserActiveBotPositions(address user) external view returns (uint256[] memory) {
+        return users[user].activeBotPositions;
+    }
+
+    function getPoolStatus(uint256 poolId) external view returns (uint256 size, uint256 currentFill, uint256 payout, uint256 fee) {
+        BotPool storage pool = botPools[poolId];
+        return (pool.poolSize, pool.bots.length, pool.payoutAmount, pool.rebirthFee);
     }
 
     // Withdrawal Functions - From ADMIN WALLET (Choose USDT or USDC)

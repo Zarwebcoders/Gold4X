@@ -5,7 +5,7 @@ import { useWeb3 } from '../context/Web3Context';
 import Button from '../components/ui/Button';
 import { Wallet, Key, Loader2, ArrowRight, Zap, CheckCircle2, AlertCircle } from 'lucide-react';
 import Card from '../components/ui/Card';
-import logo from '../assets/logo.jpg';
+// import logo from '../assets/LogoBG.png';
 
 const Welcome = () => {
     const { account, connectWallet, disconnectWallet, contract, loading: walletLoading } = useWeb3();
@@ -150,11 +150,10 @@ const Welcome = () => {
                     className="max-w-md w-full relative z-10"
                 >
                     <div className="text-center mb-8">
-                        <div className="inline-flex items-center justify-center mb-6">
+                        <div className="inline-flex items-center justify-center">
                             {/* Logo Icon */}
-                            <img src={logo} alt="Gold4X Logo" className="w-48 h-48 object-contain" />
+                            <img src='./LogoBG.png' alt="Gold4X Logo" className="w-48 h-48 object-contain" />
                         </div>
-                        <h1 className="text-4xl font-bold text-white mb-2 tracking-tight">GOLD4X</h1>
                         <h2 className="text-xl text-highlight font-medium">Welcome Back</h2>
                         <p className="text-gray-400 mt-2 text-sm">
                             {step === 'connect' && "Connect your wallet to access the dashboard"}

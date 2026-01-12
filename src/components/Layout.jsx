@@ -61,7 +61,7 @@ const SidebarSection = ({ title, items, location }) => (
 
 const Layout = ({ children }) => {
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-    const { connectWallet, disconnectWallet, account, loading } = useWeb3();
+    const { connectWallet, disconnectWallet, account, loading, userData } = useWeb3();
     const location = useLocation();
     const navigate = useNavigate();
 
@@ -137,17 +137,10 @@ const Layout = ({ children }) => {
                 className={`fixed lg:static top-0 left-0 h-full w-72 bg-secondary border-r border-white/5 z-50 flex flex-col transition-transform duration-300 ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
                     }`}
             >
-                <div className="p-3 flex items-center gap-4">
-                    <div className="p-2 bg-gradient-to-br from-primary to-highlight rounded-xl shadow-lg shadow-orange-500/20 text-black">
-                        <Zap size={24} fill="currentColor" />
-                    </div>
-                    <div>
-                        <h1 className="text-3xl font-bold bg-gradient-to-r from-primary to-highlight bg-clip-text text-transparent">
-                            Gold4X
-                        </h1>
-                        <p className="text-xs text-gray-400 font-medium">AI Trading Platform</p>
-                    </div>
-                    <button onClick={() => setIsSidebarOpen(false)} className="lg:hidden text-gray-400 ml-auto">
+                <div className="p-3 flex items-center justify-center relative">
+                    <img src="./LogoBGLayout.png" alt="Logo" className="w-24 h-28 object-contain" />
+                    {/* <p className="text-xs text-gray-400 font-medium">AI Trading Platform</p> */}
+                    <button onClick={() => setIsSidebarOpen(false)} className="lg:hidden text-gray-400 absolute right-4">
                         <X />
                     </button>
                 </div>
@@ -239,12 +232,37 @@ const Layout = ({ children }) => {
                     </div>
 
                     <div className="flex items-center gap-4">
-                        <button className="p-3 rounded-full bg-white/5 border border-white/5 hover:bg-white/10 hover:animate-spin transition-colors text-highlight flex items-center justify-center">
+                        <button
+                            onClick={() => window.location.reload()}
+                            className="p-3 rounded-full bg-white/5 border border-white/5 hover:bg-white/10 hover:animate-spin transition-colors text-highlight flex items-center justify-center cursor-pointer"
+                            title="Refresh Page"
+                        >
                             <RefreshCw size={20} />
                         </button>
+
+                        {/* Wallet Balance Display */}
+                        {account && (userData?.g4xBalance !== undefined) && (
+                            <div className="hidden md:flex items-center gap-2 px-4 py-2 rounded-lg bg-yellow-500/10 border border-yellow-500/20 text-yellow-500 font-bold">
+                                <span className="text-sm">G4X:</span>
+                                <span>{parseFloat(userData.g4xBalance).toFixed(2)}</span>
+                            </div>
+                        )}
+
                         <Button onClick={!account ? connectWallet : undefined} disabled={loading} className={account ? "bg-green-600/20 text-green-400 border-green-500/20" : ""}>
                             {loading ? 'Connecting...' : account ? `${account.slice(0, 6)}...${account.slice(-4)}` : 'Connect Wallet'}
                         </Button>
+                        {account && (
+                            <button
+                                onClick={() => {
+                                    disconnectWallet();
+                                    navigate('/welcome');
+                                }}
+                                className="p-2 rounded-full bg-red-500/10 border border-red-500/20 text-red-500 hover:bg-red-500/20 transition-colors"
+                                title="Disconnect Wallet"
+                            >
+                                <LogOut size={16} />
+                            </button>
+                        )}
                     </div>
                 </header>
 
