@@ -26,29 +26,52 @@ const Investment = () => {
     const { account, connectWallet } = useWeb3();
     // Use account as connection status
     const isWalletConnected = !!account;
-    const { invest, txLoading } = useGold4X();
+    const { invest, txLoading, getUserInfo } = useGold4X();
     const [amount, setAmount] = useState('');
     const [referrer, setReferrer] = useState('');
     const [selectedToken, setSelectedToken] = useState('USDT');
     const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+    const [investments, setInvestments] = useState([]);
+    const [totalEarnings, setTotalEarnings] = useState(0);
 
-    // Fetch User's Referrer on Mount
+    // Fetch User's Referrer and Investment History on Mount
     React.useEffect(() => {
-        const fetchReferrer = async () => {
+        const fetchData = async () => {
             if (account) {
                 try {
-                    const res = await fetch(`https://gold4x-backend.vercel.app/api/users/${account}`);
-                    const data = await res.json();
-                    if (data.exists && data.user && data.user.referrerAddress) {
-                        setReferrer(data.user.referrerAddress);
+                    // Fetch Referrer
+                    const resUser = await fetch(`https://gold4x-backend.vercel.app/api/users/${account}`);
+                    const dataUser = await resUser.json();
+                    if (dataUser.exists && dataUser.user && dataUser.user.referrerAddress) {
+                        setReferrer(dataUser.user.referrerAddress);
                     }
+
+                    // Fetch Investment History
+                    const resInv = await fetch(`https://gold4x-backend.vercel.app/api/transactions/${account}`);
+                    const dataInv = await resInv.json();
+                    if (dataInv.success) {
+                        // Sort by date ascending to ensure correct calculation order
+                        const sorted = dataInv.transactions.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+                        setInvestments(sorted);
+                    }
+
+                    // Fetch Total Earnings from Contract
+                    const userInfo = await getUserInfo(account);
+                    if (userInfo) {
+                        setTotalEarnings(parseFloat(userInfo.totalEarned));
+                    } else {
+                        // Fallback for testing if no wallet connected but we want to test UI logic
+                        // Manually set this to test 'paid' status if needed
+                        // setTotalEarnings(1000); 
+                    }
+
                 } catch (error) {
-                    console.error("Failed to fetch referrer", error);
+                    console.error("Failed to fetch data", error);
                 }
             }
         };
-        fetchReferrer();
-    }, [account]);
+        fetchData();
+    }, [account, getUserInfo]);
 
     const handleInvest = async () => {
         if (!isWalletConnected) {
@@ -121,6 +144,26 @@ const Investment = () => {
         : `$${formattedAmount} ${selectedToken}`;
 
     const dailyRoi = (roiEligible * 0.006).toFixed(2); // 0.6%
+
+    // Calculate Status for Investments
+    let remainingEarnings = totalEarnings;
+    const investmentsWithStatus = investments.map((inv, index) => {
+        // Rule: For the first investment, deduct 50 (activation fee) before 4x calculation
+        const effectiveAmount = index === 0 ? Math.max(0, inv.amount - 50) : inv.amount;
+        const target = effectiveAmount * 4;
+
+        let status = 'Unpaid';
+        // Only mark as Paid if we have enough earnings covering the full target
+        if (remainingEarnings >= target && target > 0) {
+            status = 'Paid';
+            remainingEarnings -= target;
+        } else {
+            // If we can't fully pay this target, all remaining earnings are consumed/blocked by this investment
+            // ensuring subsequent investments don't get 'skipped' ahead.
+            remainingEarnings = 0;
+        }
+        return { ...inv, status, target, effectiveAmount };
+    });
 
     return (
         <div className="space-y-8">
@@ -324,6 +367,72 @@ const Investment = () => {
                     </Card>
                 </motion.div>
             </div>
+
+            {/* Investment History Table */}
+            <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.4 }}
+            >
+                <Card>
+                    <div className="flex justify-between items-center mb-6">
+                        <h3 className="text-xl font-bold flex items-center gap-2 text-white">
+                            <TrendingUp className="text-highlight" size={20} /> Investment History
+                        </h3>
+                        <div className="bg-highlight/10 px-4 py-2 rounded-lg border border-highlight/20">
+                            <span className="text-gray-400 text-sm mr-2">Total Earnings:</span>
+                            <span className="text-highlight font-bold text-lg">${totalEarnings}</span>
+                        </div>
+                    </div>
+
+                    <div className="overflow-x-auto">
+                        <table className="w-full text-left border-collapse">
+                            <thead>
+                                <tr className="border-b border-white/10 text-gray-400 text-sm">
+                                    <th className="py-4 px-4">Date</th>
+                                    <th className="py-4 px-4">Amount</th>
+                                    <th className="py-4 px-4">Target (4x)</th>
+                                    <th className="py-4 px-4">Status</th>
+                                </tr>
+                            </thead>
+                            <tbody className="text-sm">
+                                {investmentsWithStatus.length > 0 ? (
+                                    investmentsWithStatus.map((inv) => (
+                                        <tr key={inv._id || inv.txHash} className="border-b border-white/5 hover:bg-white/5 transition-colors">
+                                            <td className="py-4 px-4 text-gray-300">
+                                                {new Date(inv.timestamp).toLocaleDateString()}
+                                            </td>
+                                            <td className="py-4 px-4 font-bold text-white">
+                                                ${inv.effectiveAmount}
+                                            </td>
+                                            <td className="py-4 px-4 text-gray-300">
+                                                ${inv.target}
+                                            </td>
+                                            <td className="py-4 px-4">
+                                                <span className={`px-3 py-1 rounded-full text-xs font-bold ${inv.status === 'Paid'
+                                                    ? 'bg-green-500/20 text-green-500 border border-green-500/30'
+                                                    : 'bg-red-500/20 text-red-500 border border-red-500/30'
+                                                    }`}>
+                                                    {inv.status}
+                                                </span>
+                                            </td>
+                                        </tr>
+                                    ))
+                                ) : (
+                                    <tr>
+                                        <td colSpan="4" className="py-8 text-center text-gray-500">
+                                            No investments found.
+                                        </td>
+                                    </tr>
+                                )}
+                            </tbody>
+                        </table>
+                    </div>
+                    <p className="text-xs text-gray-500 mt-4 text-center">
+                        $50 Bot Activation Fee is deducted from the first investment amount for target calculation.
+                    </p>
+                </Card>
+            </motion.div>
 
             {/* Feature Grid */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">

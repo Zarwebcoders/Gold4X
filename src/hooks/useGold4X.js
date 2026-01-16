@@ -130,12 +130,29 @@ export const useGold4X = () => {
         }
     }, [contract, account]);
 
+    const getUserInfo = useCallback(async (userAddress) => {
+        const targetAddress = userAddress || account;
+        if (!contract || !targetAddress) return null;
+        try {
+            // users returns a struct, we need the 3rd value (index 2) which is totalEarned based on ABI 
+            // ABI: totalInvested, roiEligible, totalEarned
+            const result = await contract.users(targetAddress);
+            return {
+                totalEarned: ethers.formatEther(result[2])
+            };
+        } catch (error) {
+            console.error("Get User Info failed:", error);
+            return null;
+        }
+    }, [contract, account]);
+
     return {
         invest,
         claimROI,
         claimRankReward,
         getROIInfo,
         getRankSalaryInfo,
+        getUserInfo,
         txLoading
     };
 };
