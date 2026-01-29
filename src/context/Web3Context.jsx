@@ -5,7 +5,7 @@ import Gold4XSystemABI from '../abis/Gold4XSystem.json';
 const Web3Context = createContext();
 
 // TODO: Replace with deployed contract address
-const CONTRACT_ADDRESS = "0x2E968a5fb0AEeA6d1a884AE406be61A5604c5808";
+const CONTRACT_ADDRESS = "0x7fDF05F65422e5F6c79E113bE41379cfba2CEA2A";
 
 export const Web3Provider = ({ children }) => {
     const [account, setAccount] = useState(null);
